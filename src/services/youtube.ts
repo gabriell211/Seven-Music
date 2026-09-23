@@ -9,7 +9,12 @@ type SearchItem = {
 };
 
 type SearchResponse = { items: SearchItem[] };
-type ResolveResponse = { videoId: string; streamUrl: string; expiresAt: string | null };
+export type ResolvedYouTubeStream = {
+  videoId: string;
+  streamUrl: string;
+  streamHeaders: Record<string, string>;
+  expiresAt: string | null;
+};
 
 const API_URL = process.env.EXPO_PUBLIC_SEVEN_API_URL?.replace(/\/+$/, '') ?? '';
 
@@ -80,9 +85,8 @@ export async function searchYouTube(query: string, signal?: AbortSignal): Promis
   }));
 }
 
-export async function resolveYouTubeStream(videoId: string): Promise<string> {
-  const data = await apiFetch<ResolveResponse>(
+export async function resolveYouTubeStream(videoId: string): Promise<ResolvedYouTubeStream> {
+  return apiFetch<ResolvedYouTubeStream>(
     '/v1/youtube/resolve/' + encodeURIComponent(videoId),
   );
-  return data.streamUrl;
 }
