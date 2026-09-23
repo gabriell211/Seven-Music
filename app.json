@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Seven Music",
+    "slug": "seven-music",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "sevenmusic",
+    "userInterfaceStyle": "dark",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.gabriell211.sevenmusic" },
+    "android": { "package": "com.gabriell211.sevenmusic", "edgeToEdgeEnabled": true },
+    "plugins": ["expo-router", ["expo-audio", { "enableBackgroundPlayback": true, "recordAudioAndroid": false }]],
+    "experiments": { "typedRoutes": true }
+  }
+}
