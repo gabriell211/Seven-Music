@@ -186,6 +186,15 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
     return value
 
 
+@app.get("/")
+async def root() -> dict[str, str]:
+    return {
+        "name": "Seven Music API",
+        "status": "online",
+        "version": "0.2.0",
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
