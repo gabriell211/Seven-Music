@@ -49,29 +49,46 @@ class CacheEntry:
 _resolve_cache: dict[str, CacheEntry] = {}
 
 
-def _resolver_upstream() -> str:
-    configured = os.getenv("YTDLP_RESOLVER_UPSTREAM", "").strip().rstrip("/")
+def _resolver_upstreams() -> list[str]:
+    configured = os.getenv("YTDLP_RESOLVER_UPSTREAM", "").strip()
     if configured:
-        return configured
+        return [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
     if os.getenv("VERCEL"):
-        return "https://seven-music-audio.onrender.com"
-    return ""
+        return [
+            "https://seven-music-audio.onrender.com",
+            "https://seven-music-audio-oregon.onrender.com",
+        ]
+    return []
 
 
 def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
-    upstream = _resolver_upstream()
-    if not upstream:
+    upstreams = _resolver_upstreams()
+    if not upstreams:
         raise RuntimeError("upstream disabled")
 
-    request = urllib.request.Request(
-        upstream + "/v1/youtube/resolve/" + video_id,
-        headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
-    )
-    with urllib.request.urlopen(request, timeout=25) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, dict) or not payload.get("streamUrl"):
-        raise RuntimeError("upstream returned no streamUrl")
-    return payload
+    last_error: Exception | None = None
+    for upstream in upstreams:
+        try:
+            request = urllib.request.Request(
+                upstream + "/v1/youtube/resolve/" + video_id,
+                headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
+            )
+            with urllib.request.urlopen(request, timeout=25) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if isinstance(payload, dict) and payload.get("streamUrl"):
+                return payload
+            raise RuntimeError("upstream returned no streamUrl")
+        except Exception as exc:
+            last_error = exc
+            print(
+                "Seven Music upstream candidate failed:",
+                upstream,
+                type(exc).__name__,
+                str(exc),
+                file=sys.stderr,
+            )
+
+    raise RuntimeError("all upstream resolvers failed") from last_error
 
 
 def _extractor_args() -> dict[str, dict[str, list[str]]]:
@@ -347,7 +364,7 @@ async def youtube_resolve(video_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="ID de vídeo inválido.")
 
     try:
-        if _resolver_upstream():
+        if _resolver_upstreams():
             try:
                 return await asyncio.to_thread(_resolve_upstream_sync, video_id)
             except Exception as upstream_exc:
