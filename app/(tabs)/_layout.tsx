@@ -15,8 +15,8 @@ export default function TabsLayout() {
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
       }}>
         <Tabs.Screen name="index" options={{ title:'Início', tabBarIcon:({color,size})=><MaterialCommunityIcons name="home-variant" color={color} size={size}/> }} />
-        <Tabs.Screen name="search" options={{ title:'Buscar', tabBarIcon:({color,size})=><MaterialCommunityIcons name="magnify" color={color} size={size}/> }} />
-        <Tabs.Screen name="library" options={{ title:'Biblioteca', tabBarIcon:({color,size})=><MaterialCommunityIcons name="music-box-multiple-outline" color={color} size={size}/> }} />
+        <Tabs.Screen name="library" options={{ title:'Locais', tabBarIcon:({color,size})=><MaterialCommunityIcons name="music-box-multiple-outline" color={color} size={size}/> }} />
+        <Tabs.Screen name="online" options={{ title:'Online', tabBarIcon:({color,size})=><MaterialCommunityIcons name="cloud-outline" color={color} size={size}/> }} />
         <Tabs.Screen name="playlists" options={{ title:'Playlists', tabBarIcon:({color,size})=><MaterialCommunityIcons name="playlist-music" color={color} size={size}/> }} />
       </Tabs>
       <MiniPlayer />

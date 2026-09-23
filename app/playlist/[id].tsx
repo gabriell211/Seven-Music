@@ -15,7 +15,7 @@ export default function PlaylistDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { playlists, addToPlaylist, removeFromPlaylist, deletePlaylist } = useCollections();
   const { tracks: deviceTracks } = useMusicLibrary();
-  const { track: currentTrack, play } = usePlayer();
+  const { track: currentTrack, hasSelection, play } = usePlayer();
   const [snapshots, setSnapshots] = useState<Record<string, Track>>({});
 
   const playlist = playlists.find((item) => item.id === id);
@@ -70,11 +70,12 @@ export default function PlaylistDetail() {
           <View style={s.cover}><MaterialCommunityIcons name="playlist-music" size={44} color={C.purple}/></View>
           <Text style={s.count}>{tracks.length} {tracks.length === 1 ? 'música' : 'músicas'}</Text>
           <Pressable
-            style={s.addCurrent}
+            style={[s.addCurrent, !hasSelection && { opacity: .5 }]}
+            disabled={!hasSelection}
             onPress={() => void addToPlaylist(playlist.id, currentTrack)}
           >
             <MaterialCommunityIcons name="plus" size={20} color="#180A20"/>
-            <Text style={s.addText}>Adicionar música atual</Text>
+            <Text style={s.addText}>{hasSelection ? 'Adicionar música atual' : 'Escolha uma música para adicionar'}</Text>
           </Pressable>
         </View>
 

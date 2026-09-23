@@ -8,7 +8,7 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
-import { localTracks, type Track } from './music';
+import type { Track } from './music';
 import { useCollections } from './collections';
 import { useMusicLibrary } from './library';
 import {
@@ -39,6 +39,7 @@ import {
 
 type Value = {
   track: Track;
+  hasSelection: boolean;
   queue: readonly Track[];
   playing: boolean;
   currentTime: number;
@@ -63,6 +64,14 @@ type Value = {
 };
 
 const Context = createContext<Value | null>(null);
+const EMPTY_TRACK: Track = {
+  id: 'empty',
+  title: 'Nenhuma música selecionada',
+  artist: 'Escolha uma música para ouvir',
+  duration: '0:00',
+  source: 'local',
+  colors: ['#181020', '#362047', '#0B0C11'],
+};
 
 function cleanQueueTrack(track: Track): Track {
   return {
@@ -85,8 +94,9 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const { tracks: deviceTracks } = useMusicLibrary();
   const { recordPlay } = useCollections();
 
-  const [track, setTrack] = useState<Track>(localTracks[0]!);
-  const [queue, setQueue] = useState<Track[]>(localTracks);
+  const [track, setTrack] = useState<Track>(EMPTY_TRACK);
+  const [hasSelection, setHasSelection] = useState(false);
+  const [queue, setQueue] = useState<Track[]>([]);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -110,8 +120,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (deviceTracks.length === 0) return;
-
     let cancelled = false;
 
     void Promise.all([
@@ -122,7 +130,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       if (cancelled) return;
 
       const knownTracks = new Map(
-        [...Object.values(snapshots), ...localTracks, ...deviceTracks]
+        [...Object.values(snapshots), ...deviceTracks]
           .map((item) => [item.id, item] as const),
       );
 
@@ -134,7 +142,10 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
       if (!savedId) return;
       const savedTrack = knownTracks.get(savedId);
-      if (savedTrack) setTrack(savedTrack);
+      if (savedTrack) {
+        setTrack(savedTrack);
+        setHasSelection(true);
+      }
     });
 
     return () => {
@@ -152,7 +163,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     }, 350);
 
     return () => clearInterval(timer);
-  }, [youtubeEmbed]);
+  }, []);
 
   const persistQueue = useCallback(async (nextQueue: readonly Track[]) => {
     await Promise.all([
@@ -186,13 +197,13 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       }
 
       setTrack(selectedTrack);
+      setHasSelection(true);
       setCurrentTime(0);
       setDuration(selectedTrack.durationSeconds ?? 0);
 
       await Promise.all([
         saveCurrentTrackId(selectedTrack.id),
         saveTrackSnapshot(cleanQueueTrack(selectedTrack)),
-        recordPlay(cleanQueueTrack(selectedTrack)),
       ]);
     };
 
@@ -214,6 +225,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
           const started = await playTrack(playable);
           setPlaying(started);
+          if (started) await recordPlay(cleanQueueTrack(playable));
           return;
         } catch (resolveError) {
           pausePlayback();
@@ -237,6 +249,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
       const started = await playTrack(nextTrack);
       setPlaying(started);
+      if (started) await recordPlay(cleanQueueTrack(nextTrack));
     } catch (playError) {
       setPlaying(false);
       setError(
@@ -317,7 +330,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }), [nextInternal]);
 
   const toggle = useCallback(async () => {
-    if (resolvingTrackId) return;
+    if (resolvingTrackId || !hasSelection) return;
 
     if (!track.uri) {
       await play(track, queue);
@@ -332,7 +345,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
     resumePlayback();
     setPlaying(true);
-  }, [play, playing, queue, resolvingTrackId, track]);
+  }, [hasSelection, play, playing, queue, resolvingTrackId, track]);
 
   const seek = useCallback(async (seconds: number) => {
     if (!track.uri) return;
@@ -382,6 +395,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<Value>(() => ({
     track,
+    hasSelection,
     queue,
     playing,
     currentTime,
@@ -405,6 +419,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     clearError: () => setError(null),
   }), [
     track,
+    hasSelection,
     queue,
     playing,
     currentTime,

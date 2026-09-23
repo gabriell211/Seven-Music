@@ -151,7 +151,7 @@ export default function Player() {
             <Text style={s.actionText}>Letras</Text>
           </View>
           <View style={s.action}>
-            <MaterialCommunityIcons name={onlineAudio ? 'music-circle' : 'cellphone-music'} size={22} color={onlineAudio ? C.purple : C.soft}/>
+            <MaterialCommunityIcons name={onlineAudio ? 'music-circle' : 'cellphone'} size={22} color={onlineAudio ? C.purple : C.soft}/>
             <Text style={s.actionText}>{onlineAudio ? 'Áudio online' : 'Dispositivo'}</Text>
           </View>
         </View>

@@ -102,9 +102,10 @@ jobs:
 
           ### Destaques
           - Player local Android/iOS
-          - Busca real no YouTube
-          - Reprodução com tentativa via yt-dlp
-          - Fallback automático para o player oficial do YouTube quando a extração é bloqueada
+          - Páginas separadas para músicas locais e online
+          - Busca local no aparelho e busca online no YouTube
+          - Reprodução online exclusivamente em áudio via resolver yt-dlp
+          - Links "Ver tudo" da Home abrem histórico, músicas locais e playlists
           - Mini-player, fila, favoritos, shuffle e repeat
           - Reprodução em segundo plano para áudio local
           - API Seven Music em produção

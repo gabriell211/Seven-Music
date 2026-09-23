@@ -24,4 +24,4 @@ Pesquisa:
 
 No app, configure EXPO_PUBLIC_SEVEN_API_URL apontando para o IP/host dessa API.
 
-Nunca versione cookies de conta. Se algum ambiente exigir cookies, monte o arquivo fora do repositório e defina YTDLP_COOKIES_FILE.
+Em produção, configure `YTDLP_COOKIES_B64` como secret do serviço Render com o conteúdo de um `cookies.txt` do YouTube em Base64. Para execução local, monte o arquivo fora do repositório e defina `YTDLP_COOKIES_FILE`. `YTDLP_PROXY` pode definir uma saída de rede própria. Nunca versione cookies ou credenciais.

@@ -1,13 +1,25 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useEffect } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Chip, TrackRow } from '@/ui';
+import { TrackRow } from '@/ui';
 import { useMusicLibrary } from '@/library';
 import { C } from '@/theme';
 
 export default function Library() {
   const { tracks, status, error, scan } = useMusicLibrary();
+  const [query, setQuery] = useState('');
+
+  const visibleTracks = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase('pt-BR');
+    if (!normalized) return tracks;
+    return tracks.filter((track) =>
+      track.title.toLocaleLowerCase('pt-BR').includes(normalized)
+      || track.artist.toLocaleLowerCase('pt-BR').includes(normalized)
+      || track.album?.toLocaleLowerCase('pt-BR').includes(normalized)
+      || track.filename?.toLocaleLowerCase('pt-BR').includes(normalized),
+    );
+  }, [tracks, query]);
 
   useEffect(() => {
     if (status === 'idle') void scan();
@@ -17,29 +29,29 @@ export default function Library() {
     <SafeAreaView edges={['top']} style={s.safe}>
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
         <View style={s.header}>
-          <Text style={s.title}>Biblioteca</Text>
+          <Text style={s.title}>Músicas locais</Text>
           <Pressable accessibilityLabel="Atualizar biblioteca" onPress={() => void scan()}>
             <MaterialCommunityIcons name="refresh" size={24} color={C.soft}/>
           </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>
-          <Chip label="Músicas" active/>
-          <Chip label="Artistas"/>
-          <Chip label="Álbuns"/>
-          <Chip label="Pastas"/>
-        </ScrollView>
-
-        <View style={s.sort}>
-          <Text style={s.sortLabel}>Ordenar por</Text>
-          <View style={s.pill}>
-            <Text style={s.sortValue}>Mais recentes</Text>
-            <MaterialCommunityIcons name="chevron-down" size={16} color={C.soft}/>
+        {status === 'ready' ? <>
+          <View style={s.inputWrap}>
+            <MaterialCommunityIcons name="magnify" size={20} color={C.muted}/>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              style={s.input}
+              placeholder="Buscar neste aparelho..."
+              placeholderTextColor={C.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="Buscar músicas locais"
+            />
           </View>
-          <View style={s.shuffle}>
-            <MaterialCommunityIcons name="shuffle" size={19} color="#180A20"/>
-          </View>
-        </View>
+          <Text style={s.summary}>{query.trim() ? `${visibleTracks.length} de ${tracks.length}` : tracks.length} {tracks.length === 1 ? 'música' : 'músicas'} neste aparelho</Text>
+        </> : null}
 
         {status === 'scanning' ? (
           <View style={s.state}>
@@ -78,7 +90,11 @@ export default function Library() {
           </View>
         ) : null}
 
-        {tracks.map((track) => <TrackRow key={track.id} track={track} queue={tracks}/>)}
+        {status === 'ready' && tracks.length > 0 && visibleTracks.length === 0 ? (
+          <Text style={s.noMatches}>Nenhuma música local encontrada para esta busca.</Text>
+        ) : null}
+
+        {status === 'ready' ? visibleTracks.map((track) => <TrackRow key={track.id} track={track} queue={visibleTracks}/>) : null}
         <View style={{ height: 132 }}/>
       </ScrollView>
     </SafeAreaView>
@@ -88,14 +104,12 @@ export default function Library() {
 const s=StyleSheet.create({
  safe:{flex:1,backgroundColor:C.bg},
  content:{paddingHorizontal:18,paddingTop:8},
- header:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:15},
+  header:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:10},
  title:{color:C.text,fontSize:25,fontWeight:'900'},
- chips:{gap:8,paddingRight:8},
- sort:{marginTop:16,marginBottom:8,flexDirection:'row',alignItems:'center',gap:9},
- sortLabel:{color:C.soft,fontSize:12},
- pill:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:'#1B1D27',borderRadius:999,paddingHorizontal:12,height:33,borderWidth:1,borderColor:'#252733'},
- sortValue:{color:C.soft,fontSize:11.5,fontWeight:'700'},
- shuffle:{marginLeft:'auto',width:36,height:36,borderRadius:12,backgroundColor:C.purple,alignItems:'center',justifyContent:'center'},
+  inputWrap:{height:46,borderRadius:14,paddingHorizontal:13,backgroundColor:'#171922',borderWidth:1,borderColor:'#22242F',flexDirection:'row',alignItems:'center',gap:8,marginBottom:12},
+  input:{flex:1,color:C.text,fontSize:13,paddingVertical:0},
+  summary:{color:C.muted,fontSize:12,marginBottom:12},
+  noMatches:{color:C.muted,fontSize:12.5,lineHeight:18,paddingVertical:18},
  state:{minHeight:220,alignItems:'center',justifyContent:'center',paddingHorizontal:28,gap:10},
  stateTitle:{color:C.text,fontSize:16,fontWeight:'900',textAlign:'center'},
  stateText:{color:C.muted,fontSize:12.5,lineHeight:18,textAlign:'center'},

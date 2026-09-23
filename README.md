@@ -4,12 +4,14 @@
   <img src="assets/brand/seven-mark.svg" width="96" alt="Seven Music">
 </p>
 
-Aplicativo mobile para Android e iOS com biblioteca local e pesquisa/reprodução online via YouTube, mantendo a identidade visual preto/violeta aprovada para o Seven Music.\n\nAPI de produção: https://seven-music-three.vercel.app
+Aplicativo mobile para Android e iOS com biblioteca local e pesquisa/reprodução online via YouTube, mantendo a identidade visual preto/violeta aprovada para o Seven Music.
+
+API de produção: https://seven-music-three.vercel.app
 
 ## O que já funciona
 
 - Expo SDK 57, React Native 0.86.3, React 19.2.3 e TypeScript 6 em modo strict.
-- Home, Busca, Biblioteca, Playlists, Player completo e Configurações.
+- Home, Músicas locais, Músicas online, Playlists, Player completo e Configurações.
 - Scanner real das músicas disponíveis no aparelho por `expo-media-library`.
 - Reprodução local real por `expo-audio`.
 - Background playback e metadados para controles da tela bloqueada.
@@ -22,12 +24,14 @@ Aplicativo mobile para Android e iOS com biblioteca local e pesquisa/reproduçã
 - Favoritos e fila persistidos com AsyncStorage.
 - Playlists criáveis/editáveis com músicas locais e do YouTube.
 - Histórico real das músicas reproduzidas.
-- Busca simultânea na biblioteca do aparelho e no YouTube.
+- Busca separada para músicas do aparelho e do YouTube.
+- Reprodução do YouTube exclusivamente em áudio, sem fallback para vídeo.
 - Capas reais dos resultados online.
 - Backend FastAPI + yt-dlp para pesquisa e resolução de streams.
 - Deno para os desafios JavaScript atuais do YouTube.
 - PO Token Provider isolado no Docker Compose.
 - Headers necessários do stream são transportados até o player mobile.
+- Resolução online com failover no Render e cookies do YouTube configurados apenas como secret no serviço.
 - URLs temporárias do YouTube não são persistidas.
 - CI valida compatibilidade com Expo, TypeScript e backend Python.
 
