@@ -16,7 +16,12 @@ Aplicativo mobile para Android e iOS com biblioteca local e pesquisa/reproduçã
 - Mini-player persistente entre as abas.
 - Barra de progresso e seek reais.
 - Próxima/anterior com fila contextual.
+- Auto-next real quando a faixa termina.
+- Shuffle e repeat (fila/faixa) persistentes.
+- Tela de fila com reprodução direta, remoção e limpeza.
 - Favoritos e fila persistidos com AsyncStorage.
+- Playlists criáveis/editáveis com músicas locais e do YouTube.
+- Histórico real das músicas reproduzidas.
 - Busca simultânea na biblioteca do aparelho e no YouTube.
 - Capas reais dos resultados online.
 - Backend FastAPI + yt-dlp para pesquisa e resolução de streams.
@@ -85,8 +90,8 @@ A interface usa fundo quase preto, superfícies grafite, acento violeta e o sím
 ## Próximos marcos
 
 1. Metadados e capas para arquivos locais.
-2. Playlists editáveis e histórico real.
-3. Shuffle/repeat funcionais e auto-next no fim da faixa.
-4. Tela de fila e letras.
-5. Assets nativos finais de ícone/splash e builds de distribuição.
-6. Testes automatizados de domínio e E2E.
+2. Letras sincronizadas e tela dedicada.
+3. Editor avançado de fila (reordenação por drag-and-drop).
+4. Assets nativos finais de ícone/splash e builds de distribuição.
+5. Testes automatizados de domínio e E2E.
+6. Equalizador e presets locais.
