@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx=".5" cy=".5" r=".52">
+      <stop offset="0" stop-color="#1B0C35"/>
+      <stop offset=".55" stop-color="#0E091B"/>
+      <stop offset="1" stop-color="#07080C"/>
+    </radialGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F19BFF"/>
+      <stop offset=".38" stop-color="#C45CFF"/>
+      <stop offset=".73" stop-color="#7C2CFF"/>
+      <stop offset="1" stop-color="#3D125F"/>
+    </linearGradient>
+    <linearGradient id="blade" x1=".2" y1="0" x2=".85" y2="1">
+      <stop offset="0" stop-color="#D569FF"/>
+      <stop offset=".32" stop-color="#9B3EFF"/>
+      <stop offset=".7" stop-color="#6224C8"/>
+      <stop offset="1" stop-color="#35104F"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <g transform="translate(377 364) scale(2)">
+    <path d="M132 1H39C27 1 20 5 13 14C6 23 2 36 2 57C13 48 21 43 29 39C46 36 65 38 86 36C103 31 118 18 132 1Z" fill="url(#top)"/>
+    <path d="M119 31C103 35 89 39 77 45C65 52 55 63 46 77C35 94 27 116 22 146C31 137 38 127 44 116C55 97 68 82 81 64C95 47 108 36 119 31Z" fill="url(#blade)"/>
+  </g>
+</svg>
