@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
+import urllib.request
 import shutil
 import sys
 import time
@@ -45,6 +47,31 @@ class CacheEntry:
 
 
 _resolve_cache: dict[str, CacheEntry] = {}
+
+
+def _resolver_upstream() -> str:
+    configured = os.getenv("YTDLP_RESOLVER_UPSTREAM", "").strip().rstrip("/")
+    if configured:
+        return configured
+    if os.getenv("VERCEL"):
+        return "https://seven-music-audio.onrender.com"
+    return ""
+
+
+def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
+    upstream = _resolver_upstream()
+    if not upstream:
+        raise RuntimeError("upstream disabled")
+
+    request = urllib.request.Request(
+        upstream + "/v1/youtube/resolve/" + video_id,
+        headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=25) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict) or not payload.get("streamUrl"):
+        raise RuntimeError("upstream returned no streamUrl")
+    return payload
 
 
 def _extractor_args() -> dict[str, dict[str, list[str]]]:
@@ -320,6 +347,17 @@ async def youtube_resolve(video_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="ID de vídeo inválido.")
 
     try:
+        if _resolver_upstream():
+            try:
+                return await asyncio.to_thread(_resolve_upstream_sync, video_id)
+            except Exception as upstream_exc:
+                print(
+                    "Seven Music upstream resolver failed:",
+                    type(upstream_exc).__name__,
+                    str(upstream_exc),
+                    file=sys.stderr,
+                )
+
         return await asyncio.to_thread(_resolve_sync, video_id)
     except DownloadError as exc:
         raise HTTPException(
