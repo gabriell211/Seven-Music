@@ -2,11 +2,33 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "functions": {
-    "main.py": {
+    "api/index.py": {
       "maxDuration": 60,
       "excludeFiles": "{node_modules/**,.expo/**,android/**,ios/**,assets/**,app/**,src/**,.github/**}"
     }
   },
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/api"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/docs",
+      "destination": "/api/docs"
+    },
+    {
+      "source": "/openapi.json",
+      "destination": "/api/openapi.json"
+    },
+    {
+      "source": "/v1/:path*",
+      "destination": "/api/v1/:path*"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
