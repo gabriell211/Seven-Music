@@ -2,7 +2,7 @@
   "expo": {
     "name": "Seven Music",
     "slug": "seven-music",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "orientation": "portrait",
     "scheme": "sevenmusic",
     "userInterfaceStyle": "dark",
@@ -17,7 +17,11 @@
     },
     "android": {
       "package": "com.gabriell211.sevenmusic",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#07080C"
+      }
     },
     "plugins": [
       "expo-router",
@@ -41,6 +45,15 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#07080C"
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
     }
   }
 }
