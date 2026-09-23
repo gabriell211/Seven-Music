@@ -1,22 +1,32 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { HistoryEntry, Playlist } from './collection-types';
+import type { Track } from './music';
 
 const KEYS = {
   favorites: '@seven-music/favorites',
   currentTrack: '@seven-music/current-track',
   queue: '@seven-music/queue',
+  playlists: '@seven-music/playlists',
+  history: '@seven-music/history',
+  trackSnapshots: '@seven-music/track-snapshots',
+  shuffle: '@seven-music/shuffle',
+  repeat: '@seven-music/repeat',
 } as const;
 
-function parseStringArray(value: string | null): string[] {
-  if (!value) return [];
-
+function parseJson<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback;
   try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : [];
+    return JSON.parse(value) as T;
   } catch {
-    return [];
+    return fallback;
   }
+}
+
+function parseStringArray(value: string | null): string[] {
+  const parsed = parseJson<unknown>(value, []);
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 export async function loadFavorites(): Promise<string[]> {
@@ -39,6 +49,60 @@ export async function loadQueueIds(): Promise<string[]> {
   return parseStringArray(await AsyncStorage.getItem(KEYS.queue));
 }
 
-export async function saveQueueIds(ids: string[]): Promise<void> {
+export async function saveQueueIds(ids: readonly string[]): Promise<void> {
   await AsyncStorage.setItem(KEYS.queue, JSON.stringify(ids));
+}
+
+export async function loadPlaylists(): Promise<Playlist[]> {
+  const parsed = parseJson<unknown>(await AsyncStorage.getItem(KEYS.playlists), []);
+  return Array.isArray(parsed) ? parsed as Playlist[] : [];
+}
+
+export async function savePlaylists(playlists: readonly Playlist[]): Promise<void> {
+  await AsyncStorage.setItem(KEYS.playlists, JSON.stringify(playlists));
+}
+
+export async function loadHistory(): Promise<HistoryEntry[]> {
+  const parsed = parseJson<unknown>(await AsyncStorage.getItem(KEYS.history), []);
+  return Array.isArray(parsed) ? parsed as HistoryEntry[] : [];
+}
+
+export async function saveHistory(entries: readonly HistoryEntry[]): Promise<void> {
+  await AsyncStorage.setItem(KEYS.history, JSON.stringify(entries));
+}
+
+export async function loadTrackSnapshots(): Promise<Record<string, Track>> {
+  return parseJson<Record<string, Track>>(
+    await AsyncStorage.getItem(KEYS.trackSnapshots),
+    {},
+  );
+}
+
+export async function saveTrackSnapshot(track: Track): Promise<void> {
+  const snapshots = await loadTrackSnapshots();
+  snapshots[track.id] = {
+    ...track,
+    uri: track.source === 'youtube' ? undefined : track.uri,
+    requestHeaders: undefined,
+  };
+  await AsyncStorage.setItem(KEYS.trackSnapshots, JSON.stringify(snapshots));
+}
+
+export async function loadShuffle(): Promise<boolean> {
+  return (await AsyncStorage.getItem(KEYS.shuffle)) === '1';
+}
+
+export async function saveShuffle(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEYS.shuffle, enabled ? '1' : '0');
+}
+
+export type RepeatMode = 'off' | 'all' | 'one';
+
+export async function loadRepeatMode(): Promise<RepeatMode> {
+  const value = await AsyncStorage.getItem(KEYS.repeat);
+  return value === 'all' || value === 'one' ? value : 'off';
+}
+
+export async function saveRepeatMode(mode: RepeatMode): Promise<void> {
+  await AsyncStorage.setItem(KEYS.repeat, mode);
 }
