@@ -4,10 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
 import { localTracks, type Track } from './music';
+import { useCollections } from './collections';
 import { useMusicLibrary } from './library';
 import {
   configurePlayback,
@@ -16,15 +18,23 @@ import {
   playTrack,
   resumePlayback,
   seekPlayback,
+  subscribePlaybackStatus,
 } from './services/audio';
 import { resolveYouTubeStream } from './services/youtube';
 import {
   loadCurrentTrackId,
   loadFavorites,
   loadQueueIds,
+  loadRepeatMode,
+  loadShuffle,
+  loadTrackSnapshots,
   saveCurrentTrackId,
   saveFavorites,
   saveQueueIds,
+  saveRepeatMode,
+  saveShuffle,
+  saveTrackSnapshot,
+  type RepeatMode,
 } from './storage';
 
 type Value = {
@@ -37,29 +47,43 @@ type Value = {
   resolvingTrackId: string | null;
   error: string | null;
   favorites: ReadonlySet<string>;
+  shuffle: boolean;
+  repeatMode: RepeatMode;
   play: (track: Track, sourceQueue?: readonly Track[]) => Promise<void>;
   toggle: () => Promise<void>;
   next: () => Promise<void>;
   previous: () => Promise<void>;
   seek: (seconds: number) => Promise<void>;
   toggleFavorite: (trackId?: string) => Promise<void>;
+  toggleShuffle: () => Promise<void>;
+  cycleRepeatMode: () => Promise<void>;
+  removeFromQueue: (trackId: string) => Promise<void>;
+  clearQueue: () => Promise<void>;
   clearError: () => void;
 };
 
 const Context = createContext<Value | null>(null);
 
 function cleanQueueTrack(track: Track): Track {
-  if (track.source !== 'youtube') return track;
-
   return {
     ...track,
-    uri: undefined,
+    uri: track.source === 'youtube' ? undefined : track.uri,
     requestHeaders: undefined,
   };
 }
 
+function randomDifferentIndex(length: number, currentIndex: number): number {
+  if (length <= 1) return 0;
+  let index = currentIndex;
+  while (index === currentIndex) {
+    index = Math.floor(Math.random() * length);
+  }
+  return index;
+}
+
 export function PlayerProvider({ children }: PropsWithChildren) {
   const { tracks: deviceTracks } = useMusicLibrary();
+  const { recordPlay } = useCollections();
 
   const [track, setTrack] = useState<Track>(localTracks[0]!);
   const [queue, setQueue] = useState<Track[]>(localTracks);
@@ -70,10 +94,19 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const [resolvingTrackId, setResolvingTrackId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
+  const finishLock = useRef(false);
 
   useEffect(() => {
     void configurePlayback();
-    void loadFavorites().then(setFavoriteIds);
+    void Promise.all([loadFavorites(), loadShuffle(), loadRepeatMode()]).then(
+      ([savedFavorites, savedShuffle, savedRepeat]) => {
+        setFavoriteIds(savedFavorites);
+        setShuffle(savedShuffle);
+        setRepeatMode(savedRepeat);
+      },
+    );
   }, []);
 
   useEffect(() => {
@@ -81,12 +114,18 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
     let cancelled = false;
 
-    void Promise.all([loadCurrentTrackId(), loadQueueIds()]).then(([savedId, queueIds]) => {
+    void Promise.all([
+      loadCurrentTrackId(),
+      loadQueueIds(),
+      loadTrackSnapshots(),
+    ]).then(([savedId, queueIds, snapshots]) => {
       if (cancelled) return;
 
       const knownTracks = new Map(
-        [...deviceTracks, ...localTracks].map((item) => [item.id, item] as const),
+        [...Object.values(snapshots), ...localTracks, ...deviceTracks]
+          .map((item) => [item.id, item] as const),
       );
+
       const restoredQueue = queueIds
         .map((id) => knownTracks.get(id))
         .filter((item): item is Track => item !== undefined);
@@ -110,13 +149,16 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       setCurrentTime(snapshot.currentTime);
       setDuration(snapshot.duration);
       setBuffering(snapshot.buffering);
-    }, 500);
+    }, 350);
 
     return () => clearInterval(timer);
   }, []);
 
   const persistQueue = useCallback(async (nextQueue: readonly Track[]) => {
-    await saveQueueIds(nextQueue.map((item) => item.id));
+    await Promise.all([
+      saveQueueIds(nextQueue.map((item) => item.id)),
+      ...nextQueue.map((item) => saveTrackSnapshot(cleanQueueTrack(item))),
+    ]);
   }, []);
 
   const play = useCallback(async (nextTrack: Track, sourceQueue?: readonly Track[]) => {
@@ -124,6 +166,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
     setError(null);
     setResolvingTrackId(nextTrack.id);
+    finishLock.current = false;
 
     try {
       let playable = nextTrack;
@@ -161,7 +204,12 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
       setTrack(playable);
       setCurrentTime(0);
-      await saveCurrentTrackId(playable.id);
+
+      await Promise.all([
+        saveCurrentTrackId(playable.id),
+        saveTrackSnapshot(cleanQueueTrack(playable)),
+        recordPlay(cleanQueueTrack(playable)),
+      ]);
 
       const started = await playTrack(playable);
       setPlaying(started);
@@ -175,7 +223,74 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     } finally {
       setResolvingTrackId(null);
     }
-  }, [persistQueue, resolvingTrackId]);
+  }, [persistQueue, recordPlay, resolvingTrackId]);
+
+  const selectNextTrack = useCallback((automatic: boolean): Track | null => {
+    if (queue.length === 0) return null;
+
+    const index = queue.findIndex((item) => item.id === track.id);
+    const safeIndex = index >= 0 ? index : 0;
+
+    if (shuffle) {
+      return queue[randomDifferentIndex(queue.length, safeIndex)] ?? null;
+    }
+
+    const isLast = safeIndex >= queue.length - 1;
+    if (automatic && isLast && repeatMode === 'off') return null;
+
+    return queue[(safeIndex + 1) % queue.length] ?? null;
+  }, [queue, repeatMode, shuffle, track.id]);
+
+  const nextInternal = useCallback(async (automatic: boolean) => {
+    if (automatic && repeatMode === 'one' && track.uri) {
+      await seekPlayback(0);
+      resumePlayback();
+      setCurrentTime(0);
+      setPlaying(true);
+      return;
+    }
+
+    const target = selectNextTrack(automatic);
+    if (!target) {
+      setPlaying(false);
+      return;
+    }
+
+    await play(target, queue);
+  }, [play, queue, repeatMode, selectNextTrack, track.uri]);
+
+  const next = useCallback(async () => {
+    await nextInternal(false);
+  }, [nextInternal]);
+
+  const previous = useCallback(async () => {
+    if (currentTime > 4 && track.uri) {
+      await seekPlayback(0);
+      setCurrentTime(0);
+      return;
+    }
+
+    if (queue.length === 0) return;
+
+    const index = queue.findIndex((item) => item.id === track.id);
+    const safeIndex = index >= 0 ? index : 0;
+    const target = shuffle
+      ? queue[randomDifferentIndex(queue.length, safeIndex)]
+      : queue[(safeIndex - 1 + queue.length) % queue.length];
+
+    if (target) await play(target, queue);
+  }, [currentTime, play, queue, shuffle, track.id, track.uri]);
+
+  useEffect(() => subscribePlaybackStatus((status) => {
+    if (!status.didJustFinish || finishLock.current) return;
+    finishLock.current = true;
+
+    void nextInternal(true).finally(() => {
+      setTimeout(() => {
+        finishLock.current = false;
+      }, 300);
+    });
+  }), [nextInternal]);
 
   const toggle = useCallback(async () => {
     if (resolvingTrackId) return;
@@ -195,32 +310,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     setPlaying(true);
   }, [play, playing, queue, resolvingTrackId, track]);
 
-  const next = useCallback(async () => {
-    if (queue.length === 0) return;
-
-    const index = queue.findIndex((item) => item.id === track.id);
-    const safeIndex = index >= 0 ? index : 0;
-    const target = queue[(safeIndex + 1) % queue.length];
-
-    if (target) await play(target, queue);
-  }, [play, queue, track.id]);
-
-  const previous = useCallback(async () => {
-    if (currentTime > 4 && track.uri) {
-      await seekPlayback(0);
-      setCurrentTime(0);
-      return;
-    }
-
-    if (queue.length === 0) return;
-
-    const index = queue.findIndex((item) => item.id === track.id);
-    const safeIndex = index >= 0 ? index : 0;
-    const target = queue[(safeIndex - 1 + queue.length) % queue.length];
-
-    if (target) await play(target, queue);
-  }, [currentTime, play, queue, track.id, track.uri]);
-
   const seek = useCallback(async (seconds: number) => {
     if (!track.uri) return;
     await seekPlayback(seconds);
@@ -236,6 +325,35 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     await saveFavorites(nextIds);
   }, [favoriteIds, track.id]);
 
+  const toggleShuffle = useCallback(async () => {
+    const nextValue = !shuffle;
+    setShuffle(nextValue);
+    await saveShuffle(nextValue);
+  }, [shuffle]);
+
+  const cycleRepeatMode = useCallback(async () => {
+    const nextMode: RepeatMode = repeatMode === 'off'
+      ? 'all'
+      : repeatMode === 'all'
+        ? 'one'
+        : 'off';
+
+    setRepeatMode(nextMode);
+    await saveRepeatMode(nextMode);
+  }, [repeatMode]);
+
+  const removeFromQueue = useCallback(async (trackId: string) => {
+    const nextQueue = queue.filter((item) => item.id !== trackId);
+    setQueue(nextQueue);
+    await persistQueue(nextQueue);
+  }, [persistQueue, queue]);
+
+  const clearQueue = useCallback(async () => {
+    const nextQueue = queue.filter((item) => item.id === track.id);
+    setQueue(nextQueue);
+    await persistQueue(nextQueue);
+  }, [persistQueue, queue, track.id]);
+
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds]);
 
   const value = useMemo<Value>(() => ({
@@ -248,12 +366,18 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     resolvingTrackId,
     error,
     favorites,
+    shuffle,
+    repeatMode,
     play,
     toggle,
     next,
     previous,
     seek,
     toggleFavorite,
+    toggleShuffle,
+    cycleRepeatMode,
+    removeFromQueue,
+    clearQueue,
     clearError: () => setError(null),
   }), [
     track,
@@ -265,12 +389,18 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     resolvingTrackId,
     error,
     favorites,
+    shuffle,
+    repeatMode,
     play,
     toggle,
     next,
     previous,
     seek,
     toggleFavorite,
+    toggleShuffle,
+    cycleRepeatMode,
+    removeFromQueue,
+    clearQueue,
   ]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
