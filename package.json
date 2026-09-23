@@ -1,6 +1,6 @@
 {
   "name": "seven-music",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -9,7 +9,10 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "build:assets": "node scripts/generate-brand-assets.mjs",
+    "check:assets": "node scripts/validate-brand-assets.mjs",
+    "postinstall": "npm run build:assets"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -30,6 +33,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "sharp": "0.35.4"
   }
 }
