@@ -46,7 +46,6 @@ type Value = {
   buffering: boolean;
   resolvingTrackId: string | null;
   error: string | null;
-  youtubeEmbed: boolean;
   favorites: ReadonlySet<string>;
   shuffle: boolean;
   repeatMode: RepeatMode;
@@ -94,7 +93,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const [buffering, setBuffering] = useState(false);
   const [resolvingTrackId, setResolvingTrackId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [youtubeEmbed, setYoutubeEmbed] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [shuffle, setShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
@@ -146,8 +144,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (youtubeEmbed) return;
-
       const snapshot = playbackSnapshot();
       setPlaying(snapshot.playing);
       setCurrentTime(snapshot.currentTime);
@@ -215,18 +211,20 @@ export function PlayerProvider({ children }: PropsWithChildren) {
           };
 
           await persistSelection(playable);
-          setYoutubeEmbed(false);
 
           const started = await playTrack(playable);
           setPlaying(started);
           return;
-        } catch {
+        } catch (resolveError) {
           pausePlayback();
           await persistSelection(cleanTrack);
-          setYoutubeEmbed(true);
           setBuffering(false);
-          setPlaying(true);
-          setError(null);
+          setPlaying(false);
+          setError(
+            resolveError instanceof Error
+              ? resolveError.message
+              : 'Não foi possível obter o áudio desta música.',
+          );
           return;
         }
       }
@@ -236,12 +234,10 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       }
 
       await persistSelection(nextTrack);
-      setYoutubeEmbed(false);
 
       const started = await playTrack(nextTrack);
       setPlaying(started);
     } catch (playError) {
-      setYoutubeEmbed(false);
       setPlaying(false);
       setError(
         playError instanceof Error
@@ -321,7 +317,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }), [nextInternal]);
 
   const toggle = useCallback(async () => {
-    if (resolvingTrackId || youtubeEmbed) return;
+    if (resolvingTrackId) return;
 
     if (!track.uri) {
       await play(track, queue);
@@ -336,7 +332,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
     resumePlayback();
     setPlaying(true);
-  }, [play, playing, queue, resolvingTrackId, track, youtubeEmbed]);
+  }, [play, playing, queue, resolvingTrackId, track]);
 
   const seek = useCallback(async (seconds: number) => {
     if (!track.uri) return;
@@ -393,7 +389,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     buffering,
     resolvingTrackId,
     error,
-    youtubeEmbed,
     favorites,
     shuffle,
     repeatMode,
@@ -417,7 +412,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     buffering,
     resolvingTrackId,
     error,
-    youtubeEmbed,
     favorites,
     shuffle,
     repeatMode,
