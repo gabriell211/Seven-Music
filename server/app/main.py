@@ -14,6 +14,13 @@ from yt_dlp.utils import DownloadError
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 CACHE_TTL_SECONDS = 300
+SAFE_HEADER_NAMES = {
+    "accept",
+    "accept-language",
+    "origin",
+    "referer",
+    "user-agent",
+}
 
 app = FastAPI(title="Seven Music API", version="0.1.0", docs_url="/docs", redoc_url=None)
 
@@ -54,7 +61,6 @@ def _base_ydl_options() -> dict[str, Any]:
         "noplaylist": True,
         "extractor_args": _extractor_args(),
         "js_runtimes": {"deno": {}},
-        "remote_components": {"ejs:github"},
         "socket_timeout": 15,
         "retries": 2,
     }
@@ -107,6 +113,15 @@ def _search_sync(query: str, limit: int) -> list[dict[str, Any]]:
     return results
 
 
+def _safe_headers(info: dict[str, Any]) -> dict[str, str]:
+    raw_headers = info.get("http_headers") or {}
+    return {
+        str(key): str(value)
+        for key, value in raw_headers.items()
+        if str(key).lower() in SAFE_HEADER_NAMES and value
+    }
+
+
 def _resolve_sync(video_id: str) -> dict[str, Any]:
     now = time.time()
     cached = _resolve_cache.get(video_id)
@@ -126,6 +141,8 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
         )
 
     stream_url = info.get("url")
+    stream_headers = _safe_headers(info)
+
     if not stream_url:
         requested = info.get("requested_formats") or []
         audio = next(
@@ -136,7 +153,9 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
             ),
             None,
         )
-        stream_url = audio.get("url") if audio else None
+        if audio:
+            stream_url = audio.get("url")
+            stream_headers = _safe_headers(audio) or stream_headers
 
     if not stream_url:
         raise DownloadError("Nenhum formato de áudio reproduzível foi encontrado.")
@@ -144,6 +163,7 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
     value = {
         "videoId": video_id,
         "streamUrl": stream_url,
+        "streamHeaders": stream_headers,
         "expiresAt": None,
     }
     _resolve_cache[video_id] = CacheEntry(
