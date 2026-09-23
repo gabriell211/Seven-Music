@@ -49,8 +49,10 @@ _resolve_cache: dict[str, CacheEntry] = {}
 
 def _extractor_args() -> dict[str, dict[str, list[str]]]:
     provider_url = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()
+    script_home = os.getenv("YTDLP_POT_SCRIPT_HOME", "").strip()
 
-    clients = ["mweb", "web_embedded"] if provider_url else ["web_embedded", "android_vr", "web"]
+    has_provider = bool(provider_url or script_home)
+    clients = ["mweb", "web", "web_embedded"] if has_provider else ["web_embedded", "android_vr", "web"]
 
     args: dict[str, dict[str, list[str]]] = {
         "youtube": {"player_client": clients}
@@ -58,6 +60,8 @@ def _extractor_args() -> dict[str, dict[str, list[str]]]:
 
     if provider_url:
         args["youtubepot-bgutilhttp"] = {"base_url": [provider_url]}
+    elif script_home:
+        args["youtubepot-bgutilscript"] = {"server_home": [script_home]}
 
     return args
 
@@ -191,14 +195,15 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
 
     url = "https://www.youtube.com/watch?v=" + video_id
     provider_url = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()
+    script_home = os.getenv("YTDLP_POT_SCRIPT_HOME", "").strip()
     js_runtimes = _available_js_runtimes()
 
     strategies: list[tuple[list[str], str]] = []
 
-    if provider_url:
+    if provider_url or script_home:
         strategies.append((
-            ["mweb", "web_embedded"],
-            "bestaudio[protocol^=http]/bestaudio/best",
+            ["mweb", "web", "web_embedded"],
+            "bestaudio[protocol^=http]/bestaudio",
         ))
 
     if js_runtimes:
@@ -232,6 +237,7 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
             "format": format_selector,
             "skip_download": True,
             "extractor_args": {
+                **_extractor_args(),
                 "youtube": {"player_client": clients},
             },
         }
