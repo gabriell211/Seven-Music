@@ -138,7 +138,15 @@ export default function Player() {
         setEmbedPlaying(state === 1);
         if (state === 0) {
           setEmbedPlaying(false);
-          void next();
+
+          if (repeatMode === 'one') {
+            seekEmbedded(0);
+            webRef.current?.injectJavaScript(
+              'if(window.player&&player.playVideo){player.playVideo();}true;',
+            );
+          } else {
+            void next();
+          }
         }
         return;
       }
