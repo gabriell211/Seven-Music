@@ -52,10 +52,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK
-        if: steps.existing.outputs.exists != 'true'
-        uses: android-actions/setup-android@v3
-
       - name: Install dependencies
         if: steps.existing.outputs.exists != 'true'
         run: npm install
