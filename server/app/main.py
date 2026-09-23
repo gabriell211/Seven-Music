@@ -322,14 +322,3 @@ async def youtube_resolve(video_id: str) -> dict[str, Any]:
             status_code=502,
             detail="Falha interna do yt-dlp: " + type(exc).__name__,
         ) from exc
-
-
-@app.get("/diagnostics")
-async def diagnostics() -> dict[str, Any]:
-    return {
-        "python": sys.version.split()[0],
-        "deno": shutil.which("deno"),
-        "node": shutil.which("node"),
-        "runtime": os.getenv("VERCEL_REGION", "local"),
-        "potProviderConfigured": bool(os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()),
-    }
