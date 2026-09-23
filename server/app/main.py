@@ -8,7 +8,6 @@ import sys
 import time
 import traceback
 
-import requests
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +18,6 @@ from yt_dlp.utils import DownloadError
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 CACHE_TTL_SECONDS = 300
-RENDER_RESOLVER_URL = os.getenv("SEVEN_RENDER_RESOLVER_URL", "https://seven-music-resolver.onrender.com").rstrip("/")
 
 SAFE_HEADER_NAMES = {
     "accept",
@@ -307,37 +305,12 @@ async def youtube_search(
         ) from exc
 
 
-def _resolve_via_render(video_id: str) -> dict[str, Any]:
-    response = requests.get(
-        RENDER_RESOLVER_URL + "/v1/youtube/resolve/" + video_id,
-        timeout=35,
-        headers={"Accept": "application/json"},
-    )
-    if response.status_code >= 400:
-        detail = "Render resolver retornou " + str(response.status_code)
-        try:
-            payload = response.json()
-            if isinstance(payload, dict) and payload.get("detail"):
-                detail = str(payload["detail"])
-        except Exception:
-            pass
-        raise RuntimeError(detail)
-
-    payload = response.json()
-    if not isinstance(payload, dict) or not payload.get("streamUrl"):
-        raise RuntimeError("Render resolver retornou uma resposta inválida.")
-    return payload
-
-
 @app.get("/v1/youtube/resolve/{video_id}")
 async def youtube_resolve(video_id: str) -> dict[str, Any]:
     if not VIDEO_ID_RE.fullmatch(video_id):
         raise HTTPException(status_code=422, detail="ID de vídeo inválido.")
 
     try:
-        if os.getenv("VERCEL"):
-            return await asyncio.to_thread(_resolve_via_render, video_id)
-
         return await asyncio.to_thread(_resolve_sync, video_id)
     except DownloadError as exc:
         raise HTTPException(
