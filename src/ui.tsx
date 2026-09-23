@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track } from './music';
 import { usePlayer } from './player';
 import { C } from './theme';
@@ -22,29 +22,54 @@ export function Chip({ label, active }: { label: string; active?: boolean }) {
 }
 
 export function Artwork({ track, size = 64 }: { track: Track; size?: number }) {
+  const radius = Math.max(9, size * .08);
+
+  if (track.thumbnail) {
+    return (
+      <Image
+        source={{ uri: track.thumbnail }}
+        style={{ width: size, height: size, borderRadius: radius, backgroundColor: C.panel }}
+        resizeMode="cover"
+        accessibilityLabel={'Capa de ' + track.title}
+      />
+    );
+  }
+
   return (
-    <LinearGradient colors={track.colors} style={{ width: size, height: size, borderRadius: Math.max(9, size * .08), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,.06)' }}>
+    <LinearGradient colors={track.colors} style={{ width: size, height: size, borderRadius: radius, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,.06)' }}>
       <MaterialCommunityIcons name={track.id.includes('after') ? 'cat' : track.source === 'youtube' ? 'youtube' : 'album'} size={size * .4} color="rgba(255,255,255,.72)" />
     </LinearGradient>
   );
 }
 
 export function TrackRow({ track, source = false }: { track: Track; source?: boolean }) {
-  const { play } = usePlayer();
+  const { play, resolvingTrackId } = usePlayer();
+  const resolving = resolvingTrackId === track.id;
+
   return (
-    <Pressable style={s.row} onPress={() => play(track)}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={'Tocar ' + track.title + ' de ' + track.artist}
+      style={({ pressed }) => [s.row, pressed && { opacity: .72 }]}
+      onPress={() => void play(track)}
+      disabled={resolving}
+    >
       <Artwork track={track} size={48}/>
       <View style={{ flex: 1 }}>
         <Text numberOfLines={1} style={s.rowTitle}>{track.title}</Text>
         <Text numberOfLines={1} style={s.rowSub}>{track.artist + ' · ' + track.duration + (source ? ' · YouTube' : '')}</Text>
       </View>
-      <MaterialCommunityIcons name="dots-vertical" size={21} color={C.soft}/>
+      {resolving
+        ? <MaterialCommunityIcons name="loading" size={21} color={C.purple}/>
+        : <MaterialCommunityIcons name="dots-vertical" size={21} color={C.soft}/>}
     </Pressable>
   );
 }
 
 export function MiniPlayer() {
-  const { track, playing, toggle, next } = usePlayer();
+  const { track, playing, resolvingTrackId, toggle, next } = usePlayer();
+  const busy = resolvingTrackId === track.id;
+
   return (
     <Pressable onPress={() => router.push('/player')} style={s.mini}>
       <Artwork track={track} size={44}/>
@@ -52,10 +77,10 @@ export function MiniPlayer() {
         <Text numberOfLines={1} style={s.rowTitle}>{track.title}</Text>
         <Text numberOfLines={1} style={s.rowSub}>{track.artist}</Text>
       </View>
-      <Pressable hitSlop={12} onPress={(e) => { e.stopPropagation(); toggle(); }}>
-        <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={27} color={C.text}/>
+      <Pressable accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} hitSlop={12} onPress={(e) => { e.stopPropagation(); void toggle(); }}>
+        <MaterialCommunityIcons name={busy ? 'loading' : playing ? 'pause' : 'play'} size={27} color={busy ? C.purple : C.text}/>
       </Pressable>
-      <Pressable hitSlop={12} onPress={(e) => { e.stopPropagation(); next(); }}>
+      <Pressable accessibilityLabel="Próxima música" hitSlop={12} onPress={(e) => { e.stopPropagation(); void next(); }}>
         <MaterialCommunityIcons name="skip-next" size={27} color={C.text}/>
       </Pressable>
     </Pressable>
