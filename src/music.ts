@@ -8,6 +8,7 @@ export type Track = {
   source: 'local' | 'youtube';
   colors: readonly [string, string, ...string[]];
   uri?: string;
+  requestHeaders?: Record<string, string>;
   assetId?: string;
   filename?: string;
   youtubeId?: string;
