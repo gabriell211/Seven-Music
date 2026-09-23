@@ -137,55 +137,134 @@ def _safe_headers(info: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _extract_stream(info: dict[str, Any]) -> tuple[str | None, dict[str, str]]:
+    stream_url = info.get("url")
+    stream_headers = _safe_headers(info)
+
+    if stream_url:
+        return str(stream_url), stream_headers
+
+    requested = info.get("requested_formats") or []
+    audio = next(
+        (
+            item
+            for item in requested
+            if item and item.get("vcodec") == "none" and item.get("url")
+        ),
+        None,
+    )
+    if audio:
+        return str(audio.get("url")), _safe_headers(audio) or stream_headers
+
+    entries = info.get("formats") or []
+    candidates = [
+        item
+        for item in entries
+        if item and item.get("url")
+    ]
+    candidates.sort(
+        key=lambda item: (
+            item.get("vcodec") == "none",
+            str(item.get("protocol") or "").startswith("m3u8"),
+            float(item.get("abr") or 0),
+            float(item.get("tbr") or 0),
+        ),
+        reverse=True,
+    )
+    if candidates:
+        best = candidates[0]
+        return str(best.get("url")), _safe_headers(best) or stream_headers
+
+    return None, stream_headers
+
+
 def _resolve_sync(video_id: str) -> dict[str, Any]:
     now = time.time()
     cached = _resolve_cache.get(video_id)
     if cached and cached.expires_at > now:
         return cached.value
 
-    options = {
-        **_base_ydl_options(),
-        "format": "bestaudio[protocol^=http]/bestaudio/best",
-        "skip_download": True,
-    }
+    url = "https://www.youtube.com/watch?v=" + video_id
+    provider_url = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()
+    js_runtimes = _available_js_runtimes()
 
-    with YoutubeDL(options) as ydl:
-        info = ydl.extract_info(
-            "https://www.youtube.com/watch?v=" + video_id,
-            download=False,
-        )
+    strategies: list[tuple[list[str], str]] = []
 
-    stream_url = info.get("url")
-    stream_headers = _safe_headers(info)
+    if provider_url:
+        strategies.append((
+            ["mweb", "web_embedded"],
+            "bestaudio[protocol^=http]/bestaudio/best",
+        ))
 
-    if not stream_url:
-        requested = info.get("requested_formats") or []
-        audio = next(
+    if js_runtimes:
+        strategies.append((
+            ["web_safari", "web", "web_embedded"],
+            "bestaudio[protocol^=m3u8]/best[protocol^=m3u8]/bestaudio[protocol^=http]/bestaudio/best",
+        ))
+    else:
+        # Vercel's Python runtime currently has no JS engine. Prefer HLS from
+        # clients whose GVS playback does not require a PO token where possible.
+        strategies.extend([
             (
-                item
-                for item in requested
-                if item and item.get("vcodec") == "none" and item.get("url")
+                ["web_safari"],
+                "bestaudio[protocol^=m3u8]/best[protocol^=m3u8]/best",
             ),
-            None,
-        )
-        if audio:
-            stream_url = audio.get("url")
-            stream_headers = _safe_headers(audio) or stream_headers
+            (
+                ["web_embedded"],
+                "bestaudio[protocol^=http]/best[protocol^=http]/best",
+            ),
+            (
+                ["tv"],
+                "bestaudio[protocol^=http]/best[protocol^=http]/best",
+            ),
+        ])
 
-    if not stream_url:
-        raise DownloadError("Nenhum formato de áudio reproduzível foi encontrado.")
+    last_error: Exception | None = None
 
-    value = {
-        "videoId": video_id,
-        "streamUrl": stream_url,
-        "streamHeaders": stream_headers,
-        "expiresAt": None,
-    }
-    _resolve_cache[video_id] = CacheEntry(
-        expires_at=now + CACHE_TTL_SECONDS,
-        value=value,
-    )
-    return value
+    for clients, format_selector in strategies:
+        options = {
+            **_base_ydl_options(),
+            "format": format_selector,
+            "skip_download": True,
+            "extractor_args": {
+                "youtube": {"player_client": clients},
+            },
+        }
+
+        try:
+            with YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+            stream_url, stream_headers = _extract_stream(info)
+            if not stream_url:
+                continue
+
+            value = {
+                "videoId": video_id,
+                "streamUrl": stream_url,
+                "streamHeaders": stream_headers,
+                "expiresAt": None,
+                "strategy": clients[0],
+            }
+            _resolve_cache[video_id] = CacheEntry(
+                expires_at=now + CACHE_TTL_SECONDS,
+                value=value,
+            )
+            return value
+        except Exception as exc:
+            last_error = exc
+            print(
+                "Seven Music resolver strategy failed:",
+                clients,
+                type(exc).__name__,
+                str(exc),
+                file=sys.stderr,
+            )
+
+    if last_error:
+        raise DownloadError(str(last_error)) from last_error
+
+    raise DownloadError("Nenhum formato de áudio reproduzível foi encontrado.")
 
 
 @app.get("/")
