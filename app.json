@@ -2,7 +2,7 @@
   "expo": {
     "name": "Seven Music",
     "slug": "seven-music",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "scheme": "sevenmusic",
     "userInterfaceStyle": "dark",
@@ -10,7 +10,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.gabriell211.sevenmusic",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -31,7 +33,9 @@
         {
           "photosPermission": "Permitir que o Seven Music acesse sua biblioteca de mídia.",
           "savePhotosPermission": "Permitir que o Seven Music salve mídia.",
-          "granularPermissions": ["audio"]
+          "granularPermissions": [
+            "audio"
+          ]
         }
       ]
     ],
