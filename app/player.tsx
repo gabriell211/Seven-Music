@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -12,7 +12,6 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { Artwork } from '@/ui';
 import { usePlayer } from '@/player';
 import { C } from '@/theme';
@@ -24,31 +23,10 @@ function formatTime(seconds: number): string {
   return String(minutes) + ':' + rest.toString().padStart(2, '0');
 }
 
-function youtubePlayerHtml(videoId: string): string {
-  const safeVideoId = videoId.replace(/[^A-Za-z0-9_-]/g, '');
-
-  return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">'
-    + '<style>html,body,#player{margin:0;padding:0;width:100%;height:100%;background:#07080C;overflow:hidden}iframe{width:100%!important;height:100%!important}</style>'
-    + '</head><body><div id="player"></div><script>'
-    + 'var player;var timer;'
-    + 'function send(p){try{window.ReactNativeWebView.postMessage(JSON.stringify(p));}catch(e){}}'
-    + 'function onYouTubeIframeAPIReady(){player=new YT.Player("player",{videoId:"' + safeVideoId + '",playerVars:{autoplay:1,controls:0,playsinline:1,rel:0,modestbranding:1},events:{'
-    + 'onReady:function(e){e.target.playVideo();send({type:"ready"});timer=setInterval(function(){if(!player||!player.getCurrentTime)return;send({type:"progress",currentTime:player.getCurrentTime()||0,duration:player.getDuration()||0});},500);},'
-    + 'onStateChange:function(e){send({type:"state",state:e.data});},'
-    + 'onError:function(e){send({type:"error",code:e.data});}'
-    + '}});}'
-    + 'var tag=document.createElement("script");tag.src="https://www.youtube.com/iframe_api";document.head.appendChild(tag);'
-    + '</script></body></html>';
-}
-
 export default function Player() {
   const { width } = useWindowDimensions();
   const art = Math.min(width - 44, 360);
-  const webRef = useRef<WebView>(null);
   const [progressWidth, setProgressWidth] = useState(1);
-  const [embedPlaying, setEmbedPlaying] = useState(false);
-  const [embedCurrentTime, setEmbedCurrentTime] = useState(0);
-  const [embedDuration, setEmbedDuration] = useState(0);
 
   const {
     track,
@@ -58,7 +36,6 @@ export default function Player() {
     buffering,
     resolvingTrackId,
     error,
-    youtubeEmbed,
     favorites,
     shuffle,
     repeatMode,
@@ -72,96 +49,27 @@ export default function Player() {
     clearError,
   } = usePlayer();
 
-  const embedded = Boolean(youtubeEmbed && track.source === 'youtube' && track.youtubeId);
-  const effectivePlaying = embedded ? embedPlaying : playing;
-  const effectiveCurrentTime = embedded ? embedCurrentTime : currentTime;
-  const effectiveDuration = embedded ? (embedDuration || track.durationSeconds || 0) : duration;
-
-  useEffect(() => {
-    setEmbedPlaying(false);
-    setEmbedCurrentTime(0);
-    setEmbedDuration(track.durationSeconds ?? 0);
-  }, [track.id, track.durationSeconds]);
-
   const progress = useMemo(
-    () => effectiveDuration > 0
-      ? Math.min(1, Math.max(0, effectiveCurrentTime / effectiveDuration))
+    () => duration > 0
+      ? Math.min(1, Math.max(0, currentTime / duration))
       : 0,
-    [effectiveCurrentTime, effectiveDuration],
+    [currentTime, duration],
   );
 
   const onProgressLayout = (event: LayoutChangeEvent) => {
     setProgressWidth(Math.max(1, event.nativeEvent.layout.width));
   };
 
-  const seekEmbedded = (seconds: number) => {
-    const target = Math.max(0, seconds);
-    webRef.current?.injectJavaScript(
-      'if(window.player&&player.seekTo){player.seekTo(' + String(target) + ',true);}true;',
-    );
-    setEmbedCurrentTime(target);
-  };
-
   const onSeek = (event: GestureResponderEvent) => {
-    if (effectiveDuration <= 0) return;
+    if (duration <= 0) return;
+
     const ratio = Math.min(1, Math.max(0, event.nativeEvent.locationX / progressWidth));
-    const target = effectiveDuration * ratio;
-
-    if (embedded) seekEmbedded(target);
-    else void seek(target);
-  };
-
-  const togglePlayback = () => {
-    if (!embedded) {
-      void toggle();
-      return;
-    }
-
-    webRef.current?.injectJavaScript(
-      embedPlaying
-        ? 'if(window.player&&player.pauseVideo){player.pauseVideo();}true;'
-        : 'if(window.player&&player.playVideo){player.playVideo();}true;',
-    );
-  };
-
-  const onYouTubeMessage = (event: WebViewMessageEvent) => {
-    try {
-      const message = JSON.parse(event.nativeEvent.data) as {
-        type?: string;
-        state?: number;
-        currentTime?: number;
-        duration?: number;
-      };
-
-      if (message.type === 'state') {
-        const state = message.state ?? -1;
-        setEmbedPlaying(state === 1);
-        if (state === 0) {
-          setEmbedPlaying(false);
-
-          if (repeatMode === 'one') {
-            seekEmbedded(0);
-            webRef.current?.injectJavaScript(
-              'if(window.player&&player.playVideo){player.playVideo();}true;',
-            );
-          } else {
-            void next();
-          }
-        }
-        return;
-      }
-
-      if (message.type === 'progress') {
-        setEmbedCurrentTime(Number(message.currentTime) || 0);
-        setEmbedDuration(Number(message.duration) || track.durationSeconds || 0);
-      }
-    } catch {
-      // Ignore malformed bridge messages.
-    }
+    void seek(duration * ratio);
   };
 
   const favorite = favorites.has(track.id);
-  const busy = !embedded && (buffering || resolvingTrackId === track.id);
+  const busy = buffering || resolvingTrackId === track.id;
+  const onlineAudio = track.source === 'youtube';
 
   return (
     <LinearGradient colors={['#0B0A10', '#08080D', '#05060A']} style={s.bg}>
@@ -174,35 +82,11 @@ export default function Player() {
         </View>
 
         <View style={s.art}>
-          {embedded && track.youtubeId ? (
-            <View style={[s.youtubeFrame, { width: art, height: Math.max(220, art * 0.64) }]}>
-              <WebView
-                key={track.youtubeId}
-                ref={webRef}
-                source={{ html: youtubePlayerHtml(track.youtubeId) }}
-                style={s.webview}
-                originWhitelist={['*']}
-                javaScriptEnabled
-                domStorageEnabled
-                allowsInlineMediaPlayback
-                allowsFullscreenVideo
-                mediaPlaybackRequiresUserAction={false}
-                onMessage={onYouTubeMessage}
-                scrollEnabled={false}
-                bounces={false}
-              />
-              <View pointerEvents="none" style={s.youtubeBadge}>
-                <MaterialCommunityIcons name="youtube" size={15} color="#FFF"/>
-                <Text style={s.youtubeBadgeText}>YouTube</Text>
-              </View>
-            </View>
-          ) : (
-            <Artwork track={track} size={art}/>
-          )}
+          <Artwork track={track} size={art}/>
 
           {busy ? (
             <View style={s.buffer}>
-              <Text style={s.bufferText}>Carregando...</Text>
+              <Text style={s.bufferText}>Carregando áudio...</Text>
             </View>
           ) : null}
         </View>
@@ -235,8 +119,8 @@ export default function Player() {
         </Pressable>
 
         <View style={s.times}>
-          <Text style={s.time}>{formatTime(effectiveCurrentTime)}</Text>
-          <Text style={s.time}>{effectiveDuration > 0 ? formatTime(effectiveDuration) : track.duration}</Text>
+          <Text style={s.time}>{formatTime(currentTime)}</Text>
+          <Text style={s.time}>{duration > 0 ? formatTime(duration) : track.duration}</Text>
         </View>
 
         <View style={s.controls}>
@@ -246,8 +130,8 @@ export default function Player() {
           <Pressable accessibilityLabel="Música anterior" onPress={() => void previous()}>
             <MaterialCommunityIcons name="skip-previous" size={39} color={C.text}/>
           </Pressable>
-          <Pressable accessibilityLabel={effectivePlaying ? 'Pausar' : 'Reproduzir'} disabled={busy} onPress={togglePlayback} style={[s.play, busy && { opacity: .72 }]}>
-            <MaterialCommunityIcons name={effectivePlaying ? 'pause' : 'play'} size={41} color="#17091F"/>
+          <Pressable accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} disabled={busy} onPress={() => void toggle()} style={[s.play, busy && { opacity: .72 }]}>
+            <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={41} color="#17091F"/>
           </Pressable>
           <Pressable accessibilityLabel="Próxima música" onPress={() => void next()}>
             <MaterialCommunityIcons name="skip-next" size={39} color={C.text}/>
@@ -267,8 +151,8 @@ export default function Player() {
             <Text style={s.actionText}>Letras</Text>
           </View>
           <View style={s.action}>
-            <MaterialCommunityIcons name={embedded ? 'youtube' : 'cast'} size={22} color={embedded ? C.purple : C.soft}/>
-            <Text style={s.actionText}>{embedded ? 'YouTube' : 'Dispositivos'}</Text>
+            <MaterialCommunityIcons name={onlineAudio ? 'music-circle' : 'cellphone-music'} size={22} color={onlineAudio ? C.purple : C.soft}/>
+            <Text style={s.actionText}>{onlineAudio ? 'Áudio online' : 'Dispositivo'}</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -281,10 +165,6 @@ const s=StyleSheet.create({
   safe:{flex:1,paddingHorizontal:22},
   top:{height:50,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
   art:{alignItems:'center',justifyContent:'center',marginTop:12,marginBottom:26},
-  youtubeFrame:{borderRadius:18,overflow:'hidden',backgroundColor:'#050507',borderWidth:1,borderColor:'#2A2034'},
-  webview:{flex:1,backgroundColor:'#050507'},
-  youtubeBadge:{position:'absolute',top:10,right:10,height:28,paddingHorizontal:9,borderRadius:999,backgroundColor:'rgba(7,8,12,.82)',flexDirection:'row',alignItems:'center',gap:5},
-  youtubeBadgeText:{color:'#FFF',fontSize:10,fontWeight:'800'},
   buffer:{position:'absolute',bottom:12,backgroundColor:'rgba(7,8,12,.82)',paddingHorizontal:12,paddingVertical:6,borderRadius:999},
   bufferText:{color:C.soft,fontSize:10.5,fontWeight:'700'},
   meta:{flexDirection:'row',alignItems:'center',gap:10},
