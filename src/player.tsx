@@ -37,7 +37,7 @@ type Value = {
   resolvingTrackId: string | null;
   error: string | null;
   favorites: ReadonlySet<string>;
-  play: (track: Track) => Promise<void>;
+  play: (track: Track, sourceQueue?: readonly Track[]) => Promise<void>;
   toggle: () => Promise<void>;
   next: () => Promise<void>;
   previous: () => Promise<void>;
@@ -48,10 +48,14 @@ type Value = {
 
 const Context = createContext<Value | null>(null);
 
-function withoutExpiredRemoteUri(track: Track): Track {
+function cleanQueueTrack(track: Track): Track {
   if (track.source !== 'youtube') return track;
-  const { uri: _uri, ...clean } = track;
-  return clean;
+
+  return {
+    ...track,
+    uri: undefined,
+    requestHeaders: undefined,
+  };
 }
 
 export function PlayerProvider({ children }: PropsWithChildren) {
@@ -87,8 +91,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         .map((id) => knownTracks.get(id))
         .filter((item): item is Track => item !== undefined);
 
-      const nextQueue = restoredQueue.length > 0 ? restoredQueue : deviceTracks;
-      setQueue(nextQueue);
+      setQueue(restoredQueue.length > 0 ? restoredQueue : deviceTracks);
 
       if (!savedId) return;
       const savedTrack = knownTracks.get(savedId);
@@ -112,11 +115,11 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     return () => clearInterval(timer);
   }, []);
 
-  const persistQueue = useCallback(async (nextQueue: Track[]) => {
+  const persistQueue = useCallback(async (nextQueue: readonly Track[]) => {
     await saveQueueIds(nextQueue.map((item) => item.id));
   }, []);
 
-  const play = useCallback(async (nextTrack: Track) => {
+  const play = useCallback(async (nextTrack: Track, sourceQueue?: readonly Track[]) => {
     if (resolvingTrackId) return;
 
     setError(null);
@@ -130,25 +133,35 @@ export function PlayerProvider({ children }: PropsWithChildren) {
           throw new Error('Este resultado do YouTube não possui um ID válido.');
         }
 
-        const uri = await resolveYouTubeStream(nextTrack.youtubeId);
-        playable = { ...withoutExpiredRemoteUri(nextTrack), uri };
+        const resolved = await resolveYouTubeStream(nextTrack.youtubeId);
+        playable = {
+          ...cleanQueueTrack(nextTrack),
+          uri: resolved.streamUrl,
+          requestHeaders: resolved.streamHeaders,
+        };
       }
 
       if (!playable.uri) {
         throw new Error('O arquivo desta música não está disponível para reprodução.');
       }
 
+      if (sourceQueue && sourceQueue.length > 0) {
+        const nextQueue = sourceQueue.map(cleanQueueTrack);
+        setQueue(nextQueue);
+        void persistQueue(nextQueue);
+      } else {
+        setQueue((currentQueue) => {
+          if (currentQueue.some((item) => item.id === playable.id)) return currentQueue;
+
+          const nextQueue = [...currentQueue, cleanQueueTrack(playable)];
+          void persistQueue(nextQueue);
+          return nextQueue;
+        });
+      }
+
       setTrack(playable);
       setCurrentTime(0);
       await saveCurrentTrackId(playable.id);
-
-      setQueue((currentQueue) => {
-        if (currentQueue.some((item) => item.id === playable.id)) return currentQueue;
-
-        const nextQueue = [...currentQueue, withoutExpiredRemoteUri(playable)];
-        void persistQueue(nextQueue);
-        return nextQueue;
-      });
 
       const started = await playTrack(playable);
       setPlaying(started);
@@ -168,7 +181,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (resolvingTrackId) return;
 
     if (!track.uri) {
-      await play(track);
+      await play(track, queue);
       return;
     }
 
@@ -180,7 +193,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
     resumePlayback();
     setPlaying(true);
-  }, [play, playing, resolvingTrackId, track]);
+  }, [play, playing, queue, resolvingTrackId, track]);
 
   const next = useCallback(async () => {
     if (queue.length === 0) return;
@@ -189,7 +202,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     const safeIndex = index >= 0 ? index : 0;
     const target = queue[(safeIndex + 1) % queue.length];
 
-    if (target) await play(target);
+    if (target) await play(target, queue);
   }, [play, queue, track.id]);
 
   const previous = useCallback(async () => {
@@ -205,7 +218,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     const safeIndex = index >= 0 ? index : 0;
     const target = queue[(safeIndex - 1 + queue.length) % queue.length];
 
-    if (target) await play(target);
+    if (target) await play(target, queue);
   }, [currentTime, play, queue, track.id, track.uri]);
 
   const seek = useCallback(async (seconds: number) => {
