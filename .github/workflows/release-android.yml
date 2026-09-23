@@ -9,7 +9,7 @@ permissions:
 
 concurrency:
   group: seven-music-release
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   release:
@@ -71,7 +71,7 @@ jobs:
       - name: Build release APK
         if: steps.existing.outputs.exists != 'true'
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon --parallel -PreactNativeArchitectures=arm64-v8a
 
       - name: Prepare release asset
         if: steps.existing.outputs.exists != 'true'
