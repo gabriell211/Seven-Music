@@ -109,7 +109,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         setRepeatMode(savedRepeat);
       },
     );
-  }, [youtubeEmbed]);
+  }, []);
 
   useEffect(() => {
     if (deviceTracks.length === 0) return;
@@ -156,7 +156,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     }, 350);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [youtubeEmbed]);
 
   const persistQueue = useCallback(async (nextQueue: readonly Track[]) => {
     await Promise.all([
