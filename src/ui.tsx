@@ -66,7 +66,7 @@ export function TrackRow({ track, source = false, queue }: { track: Track; sourc
 }
 
 export function MiniPlayer() {
-  const { track, playing, resolvingTrackId, toggle, next } = usePlayer();
+  const { track, playing, youtubeEmbed, resolvingTrackId, toggle, next } = usePlayer();
   const busy = resolvingTrackId === track.id;
 
   return (
@@ -76,8 +76,23 @@ export function MiniPlayer() {
         <Text numberOfLines={1} style={s.rowTitle}>{track.title}</Text>
         <Text numberOfLines={1} style={s.rowSub}>{track.artist}</Text>
       </View>
-      <Pressable accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} hitSlop={12} onPress={(e) => { e.stopPropagation(); void toggle(); }}>
-        <MaterialCommunityIcons name={busy ? 'loading' : playing ? 'pause' : 'play'} size={27} color={busy ? C.purple : C.text}/>
+      <Pressable
+        accessibilityLabel={youtubeEmbed ? 'Abrir player do YouTube' : playing ? 'Pausar' : 'Reproduzir'}
+        hitSlop={12}
+        onPress={(e) => {
+          e.stopPropagation();
+          if (youtubeEmbed) {
+            router.push('/player');
+          } else {
+            void toggle();
+          }
+        }}
+      >
+        <MaterialCommunityIcons
+          name={busy ? 'loading' : youtubeEmbed ? 'youtube' : playing ? 'pause' : 'play'}
+          size={27}
+          color={busy || youtubeEmbed ? C.purple : C.text}
+        />
       </Pressable>
       <Pressable accessibilityLabel="Próxima música" hitSlop={12} onPress={(e) => { e.stopPropagation(); void next(); }}>
         <MaterialCommunityIcons name="skip-next" size={27} color={C.text}/>
