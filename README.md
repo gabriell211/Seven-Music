@@ -4,7 +4,7 @@
   <img src="assets/brand/seven-mark.svg" width="96" alt="Seven Music">
 </p>
 
-Aplicativo mobile para Android e iOS com biblioteca local e pesquisa/reprodução online via YouTube, mantendo a identidade visual preto/violeta aprovada para o Seven Music.
+Aplicativo mobile para Android e iOS com biblioteca local e pesquisa/reprodução online via YouTube, mantendo a identidade visual preto/violeta aprovada para o Seven Music.\n\nAPI de produção: https://seven-music-three.vercel.app
 
 ## O que já funciona
 
@@ -63,7 +63,7 @@ Para Android/iOS nativo:
 
 Depois configure o endereço acessível pelo celular:
 
-    EXPO_PUBLIC_SEVEN_API_URL=http://IP_DO_SERVIDOR:8787
+    EXPO_PUBLIC_SEVEN_API_URL=https://seven-music-three.vercel.app
 
 Teste rápido:
 
