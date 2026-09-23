@@ -37,11 +37,15 @@ export default function Player() {
     resolvingTrackId,
     error,
     favorites,
+    shuffle,
+    repeatMode,
     toggle,
     next,
     previous,
     seek,
     toggleFavorite,
+    toggleShuffle,
+    cycleRepeatMode,
     clearError,
   } = usePlayer();
 
@@ -111,15 +115,19 @@ export default function Player() {
         </View>
 
         <View style={s.controls}>
-          <MaterialCommunityIcons name="shuffle-variant" size={25} color={C.soft}/>
+          <Pressable accessibilityLabel={shuffle ? 'Desativar aleatório' : 'Ativar aleatório'} onPress={() => void toggleShuffle()}>
+            <MaterialCommunityIcons name="shuffle-variant" size={25} color={shuffle ? C.purple : C.soft}/>
+          </Pressable>
           <Pressable accessibilityLabel="Música anterior" onPress={() => void previous()}><MaterialCommunityIcons name="skip-previous" size={39} color={C.text}/></Pressable>
           <Pressable accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} disabled={busy} onPress={() => void toggle()} style={[s.play,busy&&{opacity:.72}]}><MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={41} color="#17091F"/></Pressable>
           <Pressable accessibilityLabel="Próxima música" onPress={() => void next()}><MaterialCommunityIcons name="skip-next" size={39} color={C.text}/></Pressable>
-          <MaterialCommunityIcons name="repeat" size={25} color={C.soft}/>
+          <Pressable accessibilityLabel="Alternar repetição" onPress={() => void cycleRepeatMode()}>
+            <MaterialCommunityIcons name={repeatMode === 'one' ? 'repeat-once' : 'repeat'} size={25} color={repeatMode === 'off' ? C.soft : C.purple}/>
+          </Pressable>
         </View>
 
         <View style={s.actions}>
-          <View style={s.action}><MaterialCommunityIcons name="playlist-music" size={22} color={C.soft}/><Text style={s.actionText}>Fila</Text></View>
+          <Pressable style={s.action} onPress={() => router.push('/queue')}><MaterialCommunityIcons name="playlist-music" size={22} color={C.soft}/><Text style={s.actionText}>Fila</Text></Pressable>
           <View style={s.action}><MaterialCommunityIcons name="text" size={21} color={C.soft}/><Text style={s.actionText}>Letras</Text></View>
           <View style={s.action}><MaterialCommunityIcons name="cast" size={22} color={C.soft}/><Text style={s.actionText}>Dispositivos</Text></View>
         </View>
