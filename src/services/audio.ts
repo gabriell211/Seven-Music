@@ -3,11 +3,12 @@ import {
   requestNotificationPermissionsAsync,
   setAudioModeAsync,
   type AudioSource,
+  type AudioStatus,
 } from 'expo-audio';
 import { Platform } from 'react-native';
 import type { Track } from '@/music';
 
-const nativePlayer = createAudioPlayer(null, { updateInterval: 500 });
+const nativePlayer = createAudioPlayer(null, { updateInterval: 350 });
 let configured = false;
 
 export async function configurePlayback(): Promise<void> {
@@ -61,6 +62,13 @@ export function resumePlayback(): void {
 
 export async function seekPlayback(seconds: number): Promise<void> {
   await nativePlayer.seekTo(Math.max(0, seconds));
+}
+
+export function subscribePlaybackStatus(
+  listener: (status: AudioStatus) => void,
+): () => void {
+  const subscription = nativePlayer.addListener('playbackStatusUpdate', listener);
+  return () => subscription.remove();
 }
 
 export function playbackSnapshot() {
