@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import re
@@ -119,6 +120,26 @@ def _available_js_runtimes() -> dict[str, dict[str, Any]]:
     return {}
 
 
+def _cookies_file() -> str:
+    cookie_file = os.getenv("YTDLP_COOKIES_FILE", "").strip()
+    if cookie_file:
+        return cookie_file
+
+    encoded = os.getenv("YTDLP_COOKIES_B64", "").strip()
+    if not encoded:
+        return ""
+
+    path = "/tmp/seven-music-youtube-cookies.txt"
+    try:
+        with open(path, "wb") as handle:
+            handle.write(base64.b64decode(encoded))
+        os.chmod(path, 0o600)
+        return path
+    except Exception as exc:
+        print("Seven Music cookie decode failed:", type(exc).__name__, str(exc), file=sys.stderr)
+        return ""
+
+
 def _base_ydl_options() -> dict[str, Any]:
     options: dict[str, Any] = {
         "quiet": True,
@@ -131,9 +152,13 @@ def _base_ydl_options() -> dict[str, Any]:
         "retries": 2,
     }
 
-    cookie_file = os.getenv("YTDLP_COOKIES_FILE", "").strip()
+    cookie_file = _cookies_file()
     if cookie_file:
         options["cookiefile"] = cookie_file
+
+    proxy = os.getenv("YTDLP_PROXY", "").strip()
+    if proxy:
+        options["proxy"] = proxy
 
     return options
 
