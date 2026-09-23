@@ -5,13 +5,12 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track } from './music';
 import { usePlayer } from './player';
 import { C } from './theme';
+import { SevenMark } from './components/SevenMark';
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <View style={s.brand}>
-      <LinearGradient colors={['#D36BFF', '#7D2DFF', '#3D145D']} style={[s.logo, compact && { width: 28, height: 28 }]}>
-        <Text style={[s.logoText, compact && { fontSize: 22 }]}>7</Text>
-      </LinearGradient>
+      <SevenMark size={compact ? 27 : 32}/>
       <Text style={s.word}>SEVEN <Text style={{ color: C.purple }}>MUSIC</Text></Text>
     </View>
   );
@@ -89,8 +88,6 @@ export function MiniPlayer() {
 
 const s=StyleSheet.create({
   brand:{flexDirection:'row',alignItems:'center',gap:8},
-  logo:{width:34,height:34,borderRadius:9,alignItems:'center',justifyContent:'center',transform:[{skewX:'-10deg'}]},
-  logoText:{color:'#FFF',fontSize:27,fontWeight:'900',fontStyle:'italic',marginTop:-2},
   word:{color:C.text,fontSize:12,fontWeight:'900',letterSpacing:1.8},
   chip:{height:34,paddingHorizontal:16,borderRadius:999,backgroundColor:'#1B1D27',borderWidth:1,borderColor:'#252733',alignItems:'center',justifyContent:'center'},
   chipOn:{backgroundColor:C.purple,borderColor:C.purple},
