@@ -20,7 +20,7 @@ export default function Settings(){
   <View style={s.header}><Pressable onPress={()=>router.back()}><MaterialCommunityIcons name="chevron-left" size={30} color={C.text}/></Pressable><Brand compact/><View style={{width:30}}/></View>
   <View style={s.profile}><View style={s.avatar}><SevenMark size={45}/></View><View><Text style={s.name}>Seven Music</Text><Text style={s.tagline}>Sua música. Sem limites.</Text></View></View>
   <View style={s.panel}>{rows.map((r,i)=><View key={r[1]} style={[s.row,i<rows.length-1&&s.divider]}><MaterialCommunityIcons name={r[0]} size={22} color={C.soft}/><Text style={s.label}>{r[1]}</Text>{r[2]?<Text style={s.value}>{r[2]}</Text>:null}{i>0&&i<3?<MaterialCommunityIcons name="chevron-right" size={20} color={C.muted}/>:null}</View>)}</View>
-  <View style={s.version}><View style={s.smallLogo}><SevenMark size={29}/></View><View style={{flex:1}}><Text style={s.versionTitle}>Seven Music v0.1.0</Text><Text style={s.versionSub}>Feito por quem vive música.</Text></View><MaterialCommunityIcons name="heart" size={22} color={C.danger}/></View>
+  <View style={s.version}><View style={s.smallLogo}><SevenMark size={29}/></View><View style={{flex:1}}><Text style={s.versionTitle}>Seven Music v0.2.1</Text><Text style={s.versionSub}>Feito por quem vive música.</Text></View><MaterialCommunityIcons name="heart" size={22} color={C.danger}/></View>
  </ScrollView></SafeAreaView>
 }
 const s=StyleSheet.create({
