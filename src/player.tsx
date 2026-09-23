@@ -46,6 +46,7 @@ type Value = {
   buffering: boolean;
   resolvingTrackId: string | null;
   error: string | null;
+  youtubeEmbed: boolean;
   favorites: ReadonlySet<string>;
   shuffle: boolean;
   repeatMode: RepeatMode;
@@ -93,6 +94,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const [buffering, setBuffering] = useState(false);
   const [resolvingTrackId, setResolvingTrackId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [youtubeEmbed, setYoutubeEmbed] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [shuffle, setShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
@@ -107,7 +109,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         setRepeatMode(savedRepeat);
       },
     );
-  }, []);
+  }, [youtubeEmbed]);
 
   useEffect(() => {
     if (deviceTracks.length === 0) return;
@@ -144,6 +146,8 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     const timer = setInterval(() => {
+      if (youtubeEmbed) return;
+
       const snapshot = playbackSnapshot();
       setPlaying(snapshot.playing);
       setCurrentTime(snapshot.currentTime);
@@ -168,52 +172,76 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     setResolvingTrackId(nextTrack.id);
     finishLock.current = false;
 
-    try {
-      let playable = nextTrack;
+    const cleanTrack = cleanQueueTrack(nextTrack);
 
-      if (nextTrack.source === 'youtube') {
-        if (!nextTrack.youtubeId) {
-          throw new Error('Este resultado do YouTube não possui um ID válido.');
-        }
-
-        const resolved = await resolveYouTubeStream(nextTrack.youtubeId);
-        playable = {
-          ...cleanQueueTrack(nextTrack),
-          uri: resolved.streamUrl,
-          requestHeaders: resolved.streamHeaders,
-        };
-      }
-
-      if (!playable.uri) {
-        throw new Error('O arquivo desta música não está disponível para reprodução.');
-      }
-
+    const persistSelection = async (selectedTrack: Track) => {
       if (sourceQueue && sourceQueue.length > 0) {
         const nextQueue = sourceQueue.map(cleanQueueTrack);
         setQueue(nextQueue);
         void persistQueue(nextQueue);
       } else {
         setQueue((currentQueue) => {
-          if (currentQueue.some((item) => item.id === playable.id)) return currentQueue;
+          if (currentQueue.some((item) => item.id === selectedTrack.id)) return currentQueue;
 
-          const nextQueue = [...currentQueue, cleanQueueTrack(playable)];
+          const nextQueue = [...currentQueue, cleanQueueTrack(selectedTrack)];
           void persistQueue(nextQueue);
           return nextQueue;
         });
       }
 
-      setTrack(playable);
+      setTrack(selectedTrack);
       setCurrentTime(0);
+      setDuration(selectedTrack.durationSeconds ?? 0);
 
       await Promise.all([
-        saveCurrentTrackId(playable.id),
-        saveTrackSnapshot(cleanQueueTrack(playable)),
-        recordPlay(cleanQueueTrack(playable)),
+        saveCurrentTrackId(selectedTrack.id),
+        saveTrackSnapshot(cleanQueueTrack(selectedTrack)),
+        recordPlay(cleanQueueTrack(selectedTrack)),
       ]);
+    };
 
-      const started = await playTrack(playable);
+    try {
+      if (nextTrack.source === 'youtube') {
+        if (!nextTrack.youtubeId) {
+          throw new Error('Este resultado do YouTube não possui um ID válido.');
+        }
+
+        try {
+          const resolved = await resolveYouTubeStream(nextTrack.youtubeId);
+          const playable = {
+            ...cleanTrack,
+            uri: resolved.streamUrl,
+            requestHeaders: resolved.streamHeaders,
+          };
+
+          await persistSelection(playable);
+          setYoutubeEmbed(false);
+
+          const started = await playTrack(playable);
+          setPlaying(started);
+          return;
+        } catch {
+          pausePlayback();
+          await persistSelection(cleanTrack);
+          setYoutubeEmbed(true);
+          setBuffering(false);
+          setPlaying(true);
+          setError(null);
+          return;
+        }
+      }
+
+      if (!nextTrack.uri) {
+        throw new Error('O arquivo desta música não está disponível para reprodução.');
+      }
+
+      await persistSelection(nextTrack);
+      setYoutubeEmbed(false);
+
+      const started = await playTrack(nextTrack);
       setPlaying(started);
     } catch (playError) {
+      setYoutubeEmbed(false);
       setPlaying(false);
       setError(
         playError instanceof Error
@@ -293,7 +321,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }), [nextInternal]);
 
   const toggle = useCallback(async () => {
-    if (resolvingTrackId) return;
+    if (resolvingTrackId || youtubeEmbed) return;
 
     if (!track.uri) {
       await play(track, queue);
@@ -308,7 +336,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
     resumePlayback();
     setPlaying(true);
-  }, [play, playing, queue, resolvingTrackId, track]);
+  }, [play, playing, queue, resolvingTrackId, track, youtubeEmbed]);
 
   const seek = useCallback(async (seconds: number) => {
     if (!track.uri) return;
@@ -365,6 +393,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     buffering,
     resolvingTrackId,
     error,
+    youtubeEmbed,
     favorites,
     shuffle,
     repeatMode,
@@ -388,6 +417,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     buffering,
     resolvingTrackId,
     error,
+    youtubeEmbed,
     favorites,
     shuffle,
     repeatMode,
