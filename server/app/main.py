@@ -55,6 +55,7 @@ def _resolver_upstreams() -> list[str]:
         return [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
     if os.getenv("VERCEL"):
         return [
+            "https://seven-music-audio-pot.onrender.com",
             "https://seven-music-audio.onrender.com",
             "https://seven-music-audio-oregon.onrender.com",
         ]
