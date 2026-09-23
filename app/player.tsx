@@ -3,13 +3,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
-  GestureResponderEvent,
-  LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Artwork } from '@/ui';
@@ -34,12 +34,15 @@ export default function Player() {
     currentTime,
     duration,
     buffering,
+    resolvingTrackId,
+    error,
     favorites,
     toggle,
     next,
     previous,
     seek,
     toggleFavorite,
+    clearError,
   } = usePlayer();
 
   const progress = useMemo(
@@ -58,6 +61,7 @@ export default function Player() {
   };
 
   const favorite = favorites.has(track.id);
+  const busy = buffering || resolvingTrackId === track.id;
 
   return (
     <LinearGradient colors={['#0B0A10', '#08080D', '#05060A']} style={s.bg}>
@@ -71,7 +75,7 @@ export default function Player() {
 
         <View style={s.art}>
           <Artwork track={track} size={art}/>
-          {buffering ? <View style={s.buffer}><Text style={s.bufferText}>Carregando...</Text></View> : null}
+          {busy ? <View style={s.buffer}><Text style={s.bufferText}>Carregando...</Text></View> : null}
         </View>
 
         <View style={s.meta}>
@@ -84,16 +88,20 @@ export default function Player() {
             hitSlop={12}
             onPress={() => void toggleFavorite()}
           >
-            <MaterialCommunityIcons
-              name={favorite ? 'heart' : 'heart-outline'}
-              size={27}
-              color={favorite ? C.purple : C.soft}
-            />
+            <MaterialCommunityIcons name={favorite ? 'heart' : 'heart-outline'} size={27} color={favorite ? C.purple : C.soft}/>
           </Pressable>
         </View>
 
+        {error ? (
+          <Pressable onPress={clearError} style={s.error}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={18} color={C.danger}/>
+            <Text numberOfLines={2} style={s.errorText}>{error}</Text>
+            <MaterialCommunityIcons name="close" size={17} color={C.muted}/>
+          </Pressable>
+        ) : null}
+
         <Pressable onPress={onSeek} onLayout={onProgressLayout} style={s.progress}>
-          <View style={[s.fill, { width: String(progress * 100) + '%' }]}/>
+          <View style={[s.fill, { width: progressWidth * progress }]}/>
           <View style={[s.knob, { left: Math.max(0, progressWidth * progress - 6) }]}/>
         </Pressable>
 
@@ -104,31 +112,16 @@ export default function Player() {
 
         <View style={s.controls}>
           <MaterialCommunityIcons name="shuffle-variant" size={25} color={C.soft}/>
-          <Pressable accessibilityLabel="Música anterior" onPress={() => void previous()}>
-            <MaterialCommunityIcons name="skip-previous" size={39} color={C.text}/>
-          </Pressable>
-          <Pressable accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} onPress={() => void toggle()} style={s.play}>
-            <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={41} color="#17091F"/>
-          </Pressable>
-          <Pressable accessibilityLabel="Próxima música" onPress={() => void next()}>
-            <MaterialCommunityIcons name="skip-next" size={39} color={C.text}/>
-          </Pressable>
+          <Pressable accessibilityLabel="Música anterior" onPress={() => void previous()}><MaterialCommunityIcons name="skip-previous" size={39} color={C.text}/></Pressable>
+          <Pressable accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} disabled={busy} onPress={() => void toggle()} style={[s.play,busy&&{opacity:.72}]}><MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={41} color="#17091F"/></Pressable>
+          <Pressable accessibilityLabel="Próxima música" onPress={() => void next()}><MaterialCommunityIcons name="skip-next" size={39} color={C.text}/></Pressable>
           <MaterialCommunityIcons name="repeat" size={25} color={C.soft}/>
         </View>
 
         <View style={s.actions}>
-          <View style={s.action}>
-            <MaterialCommunityIcons name="playlist-music" size={22} color={C.soft}/>
-            <Text style={s.actionText}>Fila</Text>
-          </View>
-          <View style={s.action}>
-            <MaterialCommunityIcons name="text" size={21} color={C.soft}/>
-            <Text style={s.actionText}>Letras</Text>
-          </View>
-          <View style={s.action}>
-            <MaterialCommunityIcons name="cast" size={22} color={C.soft}/>
-            <Text style={s.actionText}>Dispositivos</Text>
-          </View>
+          <View style={s.action}><MaterialCommunityIcons name="playlist-music" size={22} color={C.soft}/><Text style={s.actionText}>Fila</Text></View>
+          <View style={s.action}><MaterialCommunityIcons name="text" size={21} color={C.soft}/><Text style={s.actionText}>Letras</Text></View>
+          <View style={s.action}><MaterialCommunityIcons name="cast" size={22} color={C.soft}/><Text style={s.actionText}>Dispositivos</Text></View>
         </View>
       </SafeAreaView>
     </LinearGradient>
@@ -136,23 +129,16 @@ export default function Player() {
 }
 
 const s=StyleSheet.create({
- bg:{flex:1},
- safe:{flex:1,paddingHorizontal:22},
- top:{height:50,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
+ bg:{flex:1},safe:{flex:1,paddingHorizontal:22},top:{height:50,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
  art:{alignItems:'center',justifyContent:'center',marginTop:12,marginBottom:26},
  buffer:{position:'absolute',bottom:12,backgroundColor:'rgba(7,8,12,.82)',paddingHorizontal:12,paddingVertical:6,borderRadius:999},
  bufferText:{color:C.soft,fontSize:10.5,fontWeight:'700'},
- meta:{flexDirection:'row',alignItems:'center',gap:10},
- title:{color:C.text,fontWeight:'900',fontSize:25,letterSpacing:-.4},
- artist:{color:C.soft,fontSize:15,marginTop:5},
- progress:{height:20,justifyContent:'center',marginTop:18},
- fill:{position:'absolute',left:0,height:4,borderRadius:999,backgroundColor:C.purple},
- knob:{position:'absolute',width:12,height:12,borderRadius:6,backgroundColor:C.purple},
- times:{flexDirection:'row',justifyContent:'space-between'},
- time:{color:C.soft,fontSize:11},
- controls:{marginTop:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
- play:{width:66,height:66,borderRadius:33,backgroundColor:C.purple,alignItems:'center',justifyContent:'center'},
+ meta:{flexDirection:'row',alignItems:'center',gap:10},title:{color:C.text,fontWeight:'900',fontSize:25,letterSpacing:-.4},artist:{color:C.soft,fontSize:15,marginTop:5},
+ error:{marginTop:14,minHeight:46,borderRadius:12,backgroundColor:'#1B1017',borderWidth:1,borderColor:'#3B1D2A',paddingHorizontal:11,flexDirection:'row',alignItems:'center',gap:9},
+ errorText:{flex:1,color:'#E8B4C2',fontSize:11.5,lineHeight:15},
+ progress:{height:20,justifyContent:'center',marginTop:18},fill:{position:'absolute',left:0,height:4,borderRadius:999,backgroundColor:C.purple},knob:{position:'absolute',width:12,height:12,borderRadius:6,backgroundColor:C.purple},
+ times:{flexDirection:'row',justifyContent:'space-between'},time:{color:C.soft,fontSize:11},
+ controls:{marginTop:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},play:{width:66,height:66,borderRadius:33,backgroundColor:C.purple,alignItems:'center',justifyContent:'center'},
  actions:{marginTop:34,paddingTop:18,borderTopWidth:1,borderTopColor:'#1A1C24',flexDirection:'row',justifyContent:'space-around'},
- action:{alignItems:'center',gap:6},
- actionText:{color:C.soft,fontSize:11.5,fontWeight:'600'}
+ action:{alignItems:'center',gap:6},actionText:{color:C.soft,fontSize:11.5,fontWeight:'600'}
 });
