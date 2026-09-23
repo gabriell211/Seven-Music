@@ -60,6 +60,10 @@ jobs:
         if: steps.existing.outputs.exists != 'true'
         run: npx expo install --check
 
+      - name: Validate native brand assets
+        if: steps.existing.outputs.exists != 'true'
+        run: npm run check:assets
+
       - name: Typecheck
         if: steps.existing.outputs.exists != 'true'
         run: npm run typecheck
@@ -88,7 +92,7 @@ jobs:
           cat > release-notes.md <<'EOF'
           ## Seven Music v${{ steps.version.outputs.version }}
 
-          Primeira release mobile publicada automaticamente pelo projeto.
+          Release mobile publicada automaticamente pelo projeto.
 
           ### Destaques
           - Player local Android/iOS
@@ -98,6 +102,7 @@ jobs:
           - Mini-player, fila, favoritos, shuffle e repeat
           - Reprodução em segundo plano para áudio local
           - API Seven Music em produção
+          - Ícone, adaptive icon e splash oficiais do Seven Music
 
           ### Android
           Baixe o arquivo **Seven-Music-v${{ steps.version.outputs.version }}-android.apk** abaixo.
