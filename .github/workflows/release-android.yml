@@ -1,0 +1,117 @@
+name: Release Android
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: seven-music-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CI: "1"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check existing release
+        id: existing
+        shell: bash
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.existing.outputs.exists != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13
+
+      - name: Setup Java
+        if: steps.existing.outputs.exists != 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Setup Android SDK
+        if: steps.existing.outputs.exists != 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        if: steps.existing.outputs.exists != 'true'
+        run: npm install
+
+      - name: Verify Expo dependencies
+        if: steps.existing.outputs.exists != 'true'
+        run: npx expo install --check
+
+      - name: Typecheck
+        if: steps.existing.outputs.exists != 'true'
+        run: npm run typecheck
+
+      - name: Generate Android project
+        if: steps.existing.outputs.exists != 'true'
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        if: steps.existing.outputs.exists != 'true'
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Prepare release asset
+        if: steps.existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk"
+          sha256sum "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk" > "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk.sha256"
+
+      - name: Publish GitHub Release
+        if: steps.existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## Seven Music v${{ steps.version.outputs.version }}
+
+          Primeira release mobile publicada automaticamente pelo projeto.
+
+          ### Destaques
+          - Player local Android/iOS
+          - Busca real no YouTube
+          - Reprodução com tentativa via yt-dlp
+          - Fallback automático para o player oficial do YouTube quando a extração é bloqueada
+          - Mini-player, fila, favoritos, shuffle e repeat
+          - Reprodução em segundo plano para áudio local
+          - API Seven Music em produção
+
+          ### Android
+          Baixe o arquivo **Seven-Music-v${{ steps.version.outputs.version }}-android.apk** abaixo.
+
+          > O APK desta release é uma build instalável para testes/distribuição direta. Publicação em loja usa o fluxo de assinatura próprio da Play Store.
+          EOF
+
+          gh release create "${{ steps.version.outputs.tag }}"             "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk"             "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk.sha256"             --target "$GITHUB_SHA"             --title "Seven Music v${{ steps.version.outputs.version }}"             --notes-file release-notes.md
+
+      - name: Release already exists
+        if: steps.existing.outputs.exists == 'true'
+        run: echo "Release ${{ steps.version.outputs.tag }} already exists; nothing to publish."
