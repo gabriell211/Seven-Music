@@ -16,7 +16,7 @@ export type ResolvedYouTubeStream = {
   expiresAt: string | null;
 };
 
-const DEFAULT_API_URL = 'https://seven-music-three.vercel.app';
+const DEFAULT_API_URL = 'https://seven-music-three.vercel.app/api';
 const API_URL = (process.env.EXPO_PUBLIC_SEVEN_API_URL ?? DEFAULT_API_URL).replace(/\/+$/, '');
 
 const PALETTES = [
