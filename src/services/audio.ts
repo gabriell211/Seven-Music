@@ -2,6 +2,7 @@ import {
   createAudioPlayer,
   requestNotificationPermissionsAsync,
   setAudioModeAsync,
+  type AudioSource,
 } from 'expo-audio';
 import { Platform } from 'react-native';
 import type { Track } from '@/music';
@@ -34,11 +35,16 @@ export async function playTrack(track: Track): Promise<boolean> {
     }
   }
 
-  nativePlayer.replace(track.uri);
+  const source: AudioSource = track.requestHeaders
+    ? { uri: track.uri, headers: track.requestHeaders, name: track.title }
+    : { uri: track.uri, name: track.title };
+
+  nativePlayer.replace(source);
   nativePlayer.setActiveForLockScreen(true, {
     title: track.title,
     artist: track.artist,
     albumTitle: track.album,
+    artworkUrl: track.thumbnail,
   });
   nativePlayer.play();
 
