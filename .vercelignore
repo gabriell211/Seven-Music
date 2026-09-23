@@ -1,0 +1,9 @@
+node_modules
+.expo
+android
+ios
+assets
+app
+src
+.github
+*.log
