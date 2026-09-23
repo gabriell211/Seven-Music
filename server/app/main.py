@@ -270,6 +270,14 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
 
     strategies: list[tuple[list[str], str]] = []
 
+    if js_runtimes:
+        # The visionOS client can expose a direct audio stream without the
+        # PO-token path used by mweb. Keep the audio-only selector.
+        strategies.append((
+            ["visionos"],
+            "bestaudio[protocol^=http]/bestaudio",
+        ))
+
     if provider_url or script_home:
         strategies.append((
             ["mweb", "web", "web_embedded"],
