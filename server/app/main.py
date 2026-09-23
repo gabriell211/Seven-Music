@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -43,15 +44,26 @@ _resolve_cache: dict[str, CacheEntry] = {}
 
 
 def _extractor_args() -> dict[str, dict[str, list[str]]]:
+    provider_url = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()
+
+    clients = ["mweb", "web_embedded"] if provider_url else ["web_embedded", "android_vr", "web"]
+
     args: dict[str, dict[str, list[str]]] = {
-        "youtube": {"player_client": ["mweb", "web_embedded"]}
+        "youtube": {"player_client": clients}
     }
 
-    provider_url = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()
     if provider_url:
         args["youtubepot-bgutilhttp"] = {"base_url": [provider_url]}
 
     return args
+
+
+def _available_js_runtimes() -> dict[str, dict[str, Any]]:
+    if shutil.which("deno"):
+        return {"deno": {}}
+    if shutil.which("node"):
+        return {"node": {}}
+    return {}
 
 
 def _base_ydl_options() -> dict[str, Any]:
@@ -60,7 +72,8 @@ def _base_ydl_options() -> dict[str, Any]:
         "no_warnings": True,
         "noplaylist": True,
         "extractor_args": _extractor_args(),
-        "js_runtimes": {"deno": {}},
+        "js_runtimes": _available_js_runtimes(),
+        "remote_components": ["ejs:github"],
         "socket_timeout": 15,
         "retries": 2,
     }
