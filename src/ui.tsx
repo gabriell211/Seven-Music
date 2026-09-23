@@ -42,7 +42,7 @@ export function Artwork({ track, size = 64 }: { track: Track; size?: number }) {
   );
 }
 
-export function TrackRow({ track, source = false }: { track: Track; source?: boolean }) {
+export function TrackRow({ track, source = false, queue }: { track: Track; source?: boolean; queue?: readonly Track[] }) {
   const { play, resolvingTrackId } = usePlayer();
   const resolving = resolvingTrackId === track.id;
 
@@ -51,7 +51,7 @@ export function TrackRow({ track, source = false }: { track: Track; source?: boo
       accessibilityRole="button"
       accessibilityLabel={'Tocar ' + track.title + ' de ' + track.artist}
       style={({ pressed }) => [s.row, pressed && { opacity: .72 }]}
-      onPress={() => void play(track)}
+      onPress={() => void play(track, queue)}
       disabled={resolving}
     >
       <Artwork track={track} size={48}/>
