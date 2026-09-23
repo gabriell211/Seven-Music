@@ -143,7 +143,8 @@ def _extract_stream(info: dict[str, Any]) -> tuple[str | None, dict[str, str]]:
     stream_url = info.get("url")
     stream_headers = _safe_headers(info)
 
-    if stream_url:
+    # Never accept a muxed/video stream. Seven Music is audio-only.
+    if stream_url and info.get("vcodec") == "none":
         return str(stream_url), stream_headers
 
     requested = info.get("requested_formats") or []
@@ -162,11 +163,13 @@ def _extract_stream(info: dict[str, Any]) -> tuple[str | None, dict[str, str]]:
     candidates = [
         item
         for item in entries
-        if item and item.get("url")
+        if item
+        and item.get("url")
+        and item.get("vcodec") == "none"
+        and item.get("acodec") not in (None, "none")
     ]
     candidates.sort(
         key=lambda item: (
-            item.get("vcodec") == "none",
             str(item.get("protocol") or "").startswith("m3u8"),
             float(item.get("abr") or 0),
             float(item.get("tbr") or 0),
@@ -201,7 +204,7 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
     if js_runtimes:
         strategies.append((
             ["web_safari", "web", "web_embedded"],
-            "bestaudio[protocol^=m3u8]/best[protocol^=m3u8]/bestaudio[protocol^=http]/bestaudio/best",
+            "bestaudio[protocol^=m3u8]/bestaudio[protocol^=http]/bestaudio",
         ))
     else:
         # Vercel's Python runtime currently has no JS engine. Prefer HLS from
@@ -209,15 +212,15 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
         strategies.extend([
             (
                 ["web_safari"],
-                "bestaudio[protocol^=m3u8]/best[protocol^=m3u8]/best",
+                "bestaudio[protocol^=m3u8]/bestaudio",
             ),
             (
                 ["web_embedded"],
-                "bestaudio[protocol^=http]/best[protocol^=http]/best",
+                "bestaudio[protocol^=http]/bestaudio",
             ),
             (
                 ["tv"],
-                "bestaudio[protocol^=http]/best[protocol^=http]/best",
+                "bestaudio[protocol^=http]/bestaudio",
             ),
         ])
 
