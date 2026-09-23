@@ -78,7 +78,7 @@ export default function Library() {
           </View>
         ) : null}
 
-        {tracks.map((track) => <TrackRow key={track.id} track={track}/>)}
+        {tracks.map((track) => <TrackRow key={track.id} track={track} queue={tracks}/>)}
         <View style={{ height: 132 }}/>
       </ScrollView>
     </SafeAreaView>
