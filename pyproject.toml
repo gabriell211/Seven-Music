@@ -6,6 +6,3 @@ dependencies = [
   "fastapi==0.141.1",
   "yt-dlp[default]==2026.8.19",
 ]
-
-[tool.vercel]
-entrypoint = "api.index:app"
