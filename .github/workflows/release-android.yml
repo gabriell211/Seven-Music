@@ -2,7 +2,7 @@ name: Release Android
 
 on:
   push:
-    branches: [main]
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -26,8 +26,12 @@ jobs:
         shell: bash
         run: |
           VERSION="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version v$VERSION" >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Check existing release
         id: existing
@@ -35,12 +39,7 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            TARGET="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.target_commitish')"
-            if [ "$TARGET" = "$GITHUB_SHA" ]; then
-              echo "current=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "current=false" >> "$GITHUB_OUTPUT"
-            fi
+            echo "current=true" >> "$GITHUB_OUTPUT"
           else
             echo "current=false" >> "$GITHUB_OUTPUT"
           fi
@@ -60,7 +59,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.existing.outputs.current != 'true'
-        run: npm install
+        run: npm ci
 
       - name: Verify Expo dependencies
         if: steps.existing.outputs.current != 'true'
@@ -73,6 +72,10 @@ jobs:
       - name: Typecheck
         if: steps.existing.outputs.current != 'true'
         run: npm run typecheck
+
+      - name: Lint
+        if: steps.existing.outputs.current != 'true'
+        run: npm run lint
 
       - name: Generate Android project
         if: steps.existing.outputs.current != 'true'
@@ -118,14 +121,10 @@ jobs:
           EOF
 
           TAG="${{ steps.version.outputs.tag }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes --cleanup-tag
-          fi
-
           gh release create "$TAG" \
             "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk" \
             "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk.sha256" \
-            --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "Seven Music v${{ steps.version.outputs.version }}" \
             --notes-file release-notes.md
 

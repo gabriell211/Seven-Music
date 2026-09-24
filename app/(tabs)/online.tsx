@@ -8,37 +8,44 @@ import { TrackRow } from '@/ui';
 import { C } from '@/theme';
 
 type OnlineStatus = 'idle' | 'loading' | 'ready' | 'error';
+type SearchResult = {
+  query: string;
+  tracks: Track[];
+  status: OnlineStatus;
+  error: string | null;
+};
 
 export default function OnlineMusic() {
   const [query, setQuery] = useState('');
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [status, setStatus] = useState<OnlineStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SearchResult>({ query: '', tracks: [], status: 'idle', error: null });
+  const trimmedQuery = query.trim();
+  const activeResult = result.query === trimmedQuery ? result : null;
+  const status: OnlineStatus = trimmedQuery.length < 2 || !youtubeApiConfigured()
+    ? 'idle'
+    : activeResult?.status ?? 'loading';
+  const tracks = activeResult?.tracks ?? [];
+  const error = activeResult?.error ?? null;
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed.length < 2 || !youtubeApiConfigured()) {
-      setTracks([]);
-      setStatus('idle');
-      setError(null);
-      return;
-    }
+    if (trimmed.length < 2 || !youtubeApiConfigured()) return;
 
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      setStatus('loading');
-      setError(null);
+      setResult({ query: trimmed, tracks: [], status: 'loading', error: null });
       void searchYouTube(trimmed, controller.signal)
         .then((results) => {
           if (controller.signal.aborted) return;
-          setTracks(results);
-          setStatus('ready');
+          setResult({ query: trimmed, tracks: results, status: 'ready', error: null });
         })
         .catch((searchError: unknown) => {
           if (controller.signal.aborted) return;
-          setTracks([]);
-          setStatus('error');
-          setError(searchError instanceof Error ? searchError.message : 'Não foi possível pesquisar no YouTube.');
+          setResult({
+            query: trimmed,
+            tracks: [],
+            status: 'error',
+            error: searchError instanceof Error ? searchError.message : 'Não foi possível pesquisar no YouTube.',
+          });
         });
     }, 450);
 
