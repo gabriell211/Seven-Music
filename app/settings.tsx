@@ -8,6 +8,9 @@ import { clearTrackSnapshots } from '@/storage';
 import { Brand } from '@/ui';
 import { C } from '@/theme';
 import { SevenMark } from '@/components/SevenMark';
+import appConfig from '../app.json';
+
+const APP_VERSION = appConfig.expo.version;
 
 type SettingRowProps = {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -90,12 +93,12 @@ export default function Settings() {
           <View style={s.divider}/>
           <SettingRow icon="folder-music-outline" label={busy ? 'Lendo músicas...' : 'Importar músicas'} onPress={() => void importMusic()}/>
           <View style={s.divider}/>
-          <SettingRow icon="information-outline" label="Mais sobre o app" onPress={() => Alert.alert('Seven Music', 'Versão 0.2.2\n\nPlayer local e busca online em áudio.')}/>
+          <SettingRow icon="information-outline" label="Mais sobre o app" onPress={() => Alert.alert('Seven Music', `Versão ${APP_VERSION}\n\nPlayer local e busca online em áudio.`)}/>
         </View>
 
         <View style={s.version}>
           <View style={s.smallLogo}><SevenMark size={29}/></View>
-          <View style={{ flex: 1 }}><Text style={s.versionTitle}>Seven Music v0.2.2</Text><Text style={s.versionSub}>Feito por quem vive música.</Text></View>
+          <View style={{ flex: 1 }}><Text style={s.versionTitle}>Seven Music v{APP_VERSION}</Text><Text style={s.versionSub}>Feito por quem vive música.</Text></View>
           <MaterialCommunityIcons name="heart" size={22} color={C.danger}/>
         </View>
       </ScrollView>

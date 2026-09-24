@@ -34,6 +34,7 @@ import {
   saveRepeatMode,
   saveShuffle,
   saveTrackSnapshot,
+  saveTrackSnapshots,
   type RepeatMode,
 } from './storage';
 
@@ -156,7 +157,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const persistQueue = useCallback(async (nextQueue: readonly Track[]) => {
     await Promise.all([
       saveQueueIds(nextQueue.map((item) => item.id)),
-      ...nextQueue.map((item) => saveTrackSnapshot(cleanQueueTrack(item))),
+      saveTrackSnapshots(nextQueue.map(cleanQueueTrack)),
     ]);
   }, []);
 
@@ -289,7 +290,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     } finally {
       setResolvingTrackId(null);
     }
-  }, [persistQueue, recordPlay, resolvingTrackId]);
+  }, [persistQueue, recordPlay, resolvingTrackId, shuffle]);
 
   const selectNextTrack = useCallback((automatic: boolean): Track | null => {
     if (queue.length === 0) return null;
@@ -397,8 +398,13 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       return;
     }
 
-    resumePlayback();
-    setPlaying(true);
+    try {
+      const started = await playTrack(track);
+      setPlaying(started);
+    } catch (playError) {
+      setPlaying(false);
+      setError(playError instanceof Error ? playError.message : 'Não foi possível continuar a música.');
+    }
   }, [hasSelection, play, playing, queue, resolvingTrackId, track]);
 
   const seek = useCallback(async (seconds: number) => {
@@ -439,16 +445,20 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     await persistQueue(nextQueue);
 
     if (!shuffle && nextQueue.some((item) => item.id === track.id)) {
-      await setPlaybackQueue(nextQueue, track.id, { preservePlayback: true });
+      await setPlaybackQueue(
+        nextQueue.map((item) => item.id === track.id ? track : item),
+        track.id,
+        { preservePlayback: true },
+      );
     }
-  }, [persistQueue, queue, shuffle, track.id]);
+  }, [persistQueue, queue, shuffle, track]);
 
   const clearQueue = useCallback(async () => {
     const nextQueue = queue.filter((item) => item.id === track.id);
     setQueue(nextQueue);
     await persistQueue(nextQueue);
-    if (track.uri) await setPlaybackQueue(nextQueue, track.id, { preservePlayback: true });
-  }, [persistQueue, queue, track.id, track.uri]);
+    if (track.uri) await setPlaybackQueue([track], track.id, { preservePlayback: true });
+  }, [persistQueue, queue, track]);
 
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds]);
 

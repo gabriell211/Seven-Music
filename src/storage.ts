@@ -13,6 +13,14 @@ const KEYS = {
   repeat: '@seven-music/repeat',
 } as const;
 
+let snapshotWrite: Promise<void> = Promise.resolve();
+
+function enqueueSnapshotWrite(work: () => Promise<void>): Promise<void> {
+  const next = snapshotWrite.catch(() => undefined).then(work);
+  snapshotWrite = next;
+  return next;
+}
+
 function parseJson<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
   try {
@@ -79,17 +87,25 @@ export async function loadTrackSnapshots(): Promise<Record<string, Track>> {
 }
 
 export async function saveTrackSnapshot(track: Track): Promise<void> {
-  const snapshots = await loadTrackSnapshots();
-  snapshots[track.id] = {
-    ...track,
-    uri: track.source === 'youtube' ? undefined : track.uri,
-    requestHeaders: undefined,
-  };
-  await AsyncStorage.setItem(KEYS.trackSnapshots, JSON.stringify(snapshots));
+  await saveTrackSnapshots([track]);
+}
+
+export function saveTrackSnapshots(tracks: readonly Track[]): Promise<void> {
+  return enqueueSnapshotWrite(async () => {
+    const snapshots = await loadTrackSnapshots();
+    for (const track of tracks) {
+      snapshots[track.id] = {
+        ...track,
+        uri: track.source === 'youtube' ? undefined : track.uri,
+        requestHeaders: undefined,
+      };
+    }
+    await AsyncStorage.setItem(KEYS.trackSnapshots, JSON.stringify(snapshots));
+  });
 }
 
 export async function clearTrackSnapshots(): Promise<void> {
-  await AsyncStorage.removeItem(KEYS.trackSnapshots);
+  await enqueueSnapshotWrite(() => AsyncStorage.removeItem(KEYS.trackSnapshots));
 }
 
 export async function loadShuffle(): Promise<boolean> {

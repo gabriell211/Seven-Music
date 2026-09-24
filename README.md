@@ -25,7 +25,7 @@ API de produção: https://seven-music-three.vercel.app
 - Playlists criáveis/editáveis com músicas locais e do YouTube.
 - Histórico real das músicas reproduzidas.
 - Busca separada para músicas do aparelho e do YouTube.
-- Reprodução do YouTube exclusivamente em áudio, sem fallback para vídeo.
+- Reprodução do YouTube exclusivamente em áudio quando o resolver consegue obter um stream; sem fallback para vídeo.
 - Capas reais dos resultados online.
 - Backend FastAPI + yt-dlp para pesquisa e resolução de streams.
 - Deno para os desafios JavaScript atuais do YouTube.
@@ -34,6 +34,8 @@ API de produção: https://seven-music-three.vercel.app
 - Resolução online com failover no Render e cookies do YouTube configurados apenas como secret no serviço.
 - URLs temporárias do YouTube não são persistidas.
 - CI valida compatibilidade com Expo, TypeScript e backend Python.
+
+A reprodução online depende de o YouTube aceitar as requisições dos serviços de resolução. Se ele exigir confirmação de acesso, a busca pode continuar funcionando enquanto a reprodução fica indisponível. Cookies e uma saída de rede adequada devem ser configurados como secrets nos serviços, fora do repositório.
 
 ## Arquitetura
 
@@ -59,6 +61,12 @@ Para Android/iOS nativo:
 
     npm run android
     npm run ios
+
+O emulador Android em máquinas Intel/AMD precisa de virtualização habilitada no firmware e de um hipervisor disponível no Windows. Confira com `emulator -accel-check` antes dos testes no AVD.
+
+## Release Android
+
+Um push na `main` executa o CI e atualiza os serviços com deploy automático, sem publicar APK. Após validar o app em um dispositivo ou emulador, atualize a versão em `package.json` e `app.json`, crie o tag correspondente (`vX.Y.Z`) e envie esse tag. O workflow de release confere a versão, gera o APK e publica a GitHub Release sem substituir uma versão existente.
 
 ## Rodar o serviço do YouTube
 

@@ -11,6 +11,7 @@ import sys
 import time
 import traceback
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,6 +32,14 @@ SAFE_HEADER_NAMES = {
 }
 
 app = FastAPI(title="Seven Music API", version="0.1.0", docs_url="/docs", redoc_url=None)
+
+print(
+    "Seven Music resolver configuration:",
+    "proxy=" + str(bool(os.getenv("YTDLP_PROXY"))),
+    "cookies=" + str(bool(os.getenv("YTDLP_COOKIES_FILE") or os.getenv("YTDLP_COOKIES_B64"))),
+    "pot_provider=" + str(bool(os.getenv("YTDLP_POT_PROVIDER_URL") or os.getenv("YTDLP_POT_SCRIPT_HOME"))),
+    file=sys.stderr,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,27 +77,36 @@ def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
     if not upstreams:
         raise RuntimeError("upstream disabled")
 
-    last_error: Exception | None = None
-    for upstream in upstreams:
-        try:
-            request = urllib.request.Request(
-                upstream + "/v1/youtube/resolve/" + video_id,
-                headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
-            )
-            with urllib.request.urlopen(request, timeout=25) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            if isinstance(payload, dict) and payload.get("streamUrl"):
-                return payload
+    def request_upstream(upstream: str) -> dict[str, Any]:
+        request = urllib.request.Request(
+            upstream + "/v1/youtube/resolve/" + video_id,
+            headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict) or not payload.get("streamUrl"):
             raise RuntimeError("upstream returned no streamUrl")
-        except Exception as exc:
-            last_error = exc
-            print(
-                "Seven Music upstream candidate failed:",
-                upstream,
-                type(exc).__name__,
-                str(exc),
-                file=sys.stderr,
-            )
+        return payload
+
+    executor = ThreadPoolExecutor(max_workers=len(upstreams))
+    futures = {executor.submit(request_upstream, upstream): upstream for upstream in upstreams}
+    last_error: Exception | None = None
+    try:
+        for future in as_completed(futures):
+            upstream = futures[future]
+            try:
+                return future.result()
+            except Exception as exc:
+                last_error = exc
+                print(
+                    "Seven Music upstream candidate failed:",
+                    upstream,
+                    type(exc).__name__,
+                    str(exc),
+                    file=sys.stderr,
+                )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     raise RuntimeError("all upstream resolvers failed") from last_error
 
@@ -408,8 +426,15 @@ async def youtube_resolve(video_id: str) -> dict[str, Any]:
                     str(upstream_exc),
                     file=sys.stderr,
                 )
+                if os.getenv("VERCEL"):
+                    raise HTTPException(
+                        status_code=502,
+                        detail="O serviço de áudio online está indisponível no momento.",
+                    ) from upstream_exc
 
         return await asyncio.to_thread(_resolve_sync, video_id)
+    except HTTPException:
+        raise
     except DownloadError as exc:
         raise HTTPException(
             status_code=502,
