@@ -31,7 +31,7 @@ export default function Home(){
 
  return <SafeAreaView edges={['top']} style={s.safe}>
   <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
-   <View style={s.top}><Brand/><Pressable accessibilityLabel="Configurações" onPress={()=>router.push('/settings')} style={s.icon}><MaterialCommunityIcons name="cog-outline" size={23} color={C.soft}/></Pressable></View>
+   <View style={s.top}><Brand/><View style={s.topActions}><Pressable accessibilityLabel="Favoritos" onPress={()=>router.push('/favorites')} style={s.icon}><MaterialCommunityIcons name="heart-outline" size={22} color={C.soft}/></Pressable><Pressable accessibilityLabel="Configurações" onPress={()=>router.push('/settings')} style={s.icon}><MaterialCommunityIcons name="cog-outline" size={23} color={C.soft}/></Pressable></View></View>
    <Text style={s.hero}>Boa música,{"\n"}sempre com você.</Text>
    <Pressable onPress={()=>router.push('/online')} style={s.search}><MaterialCommunityIcons name="magnify" size={20} color={C.muted}/><Text style={s.searchText}>Buscar músicas online...</Text></Pressable>
    <View style={s.chips}><Chip label="Músicas locais" onPress={()=>router.push('/library')}/><Chip label="Músicas online" onPress={()=>router.push('/online')}/></View>
@@ -80,6 +80,7 @@ export default function Home(){
 const s=StyleSheet.create({
  safe:{flex:1,backgroundColor:C.bg},content:{paddingHorizontal:18,paddingTop:8,gap:18},
  top:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
+ topActions:{flexDirection:'row',alignItems:'center',gap:8},
  icon:{width:38,height:38,borderRadius:19,alignItems:'center',justifyContent:'center',backgroundColor:'#101117',borderWidth:1,borderColor:'#1A1C24'},
  hero:{color:C.text,fontSize:30,lineHeight:34,fontWeight:'900',letterSpacing:-.8},
  search:{height:48,flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:14,borderRadius:14,backgroundColor:'#171922',borderWidth:1,borderColor:'#20222D'},

@@ -88,6 +88,10 @@ export async function saveTrackSnapshot(track: Track): Promise<void> {
   await AsyncStorage.setItem(KEYS.trackSnapshots, JSON.stringify(snapshots));
 }
 
+export async function clearTrackSnapshots(): Promise<void> {
+  await AsyncStorage.removeItem(KEYS.trackSnapshots);
+}
+
 export async function loadShuffle(): Promise<boolean> {
   return (await AsyncStorage.getItem(KEYS.shuffle)) === '1';
 }

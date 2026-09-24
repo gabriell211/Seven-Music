@@ -17,6 +17,7 @@ export default function RootLayout() {
             <Stack.Screen name="player" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="queue" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="history" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="favorites" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="playlist/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
           </Stack>

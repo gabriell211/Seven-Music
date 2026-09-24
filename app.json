@@ -26,13 +26,6 @@
     "plugins": [
       "expo-router",
       [
-        "expo-audio",
-        {
-          "enableBackgroundPlayback": true,
-          "recordAudioAndroid": false
-        }
-      ],
-      [
         "expo-media-library",
         {
           "photosPermission": "Permitir que o Seven Music acesse sua biblioteca de mídia.",

@@ -14,10 +14,10 @@ import { useMusicLibrary } from './library';
 import {
   configurePlayback,
   pausePlayback,
-  playbackSnapshot,
   playTrack,
   resumePlayback,
   seekPlayback,
+  setPlaybackQueue,
   subscribePlaybackStatus,
 } from './services/audio';
 import { resolveYouTubeStream } from './services/youtube';
@@ -153,18 +153,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     };
   }, [deviceTracks]);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const snapshot = playbackSnapshot();
-      setPlaying(snapshot.playing);
-      setCurrentTime(snapshot.currentTime);
-      setDuration(snapshot.duration);
-      setBuffering(snapshot.buffering);
-    }, 350);
-
-    return () => clearInterval(timer);
-  }, []);
-
   const persistQueue = useCallback(async (nextQueue: readonly Track[]) => {
     await Promise.all([
       saveQueueIds(nextQueue.map((item) => item.id)),
@@ -223,6 +211,41 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
           await persistSelection(playable);
 
+          const nativeQueue = [playable];
+          if (!shuffle && sourceQueue && sourceQueue.length > 1) {
+            const selectedIndex = sourceQueue.findIndex((item) => item.id === playable.id);
+            const neighborIndexes = [selectedIndex - 1, selectedIndex + 1]
+              .filter((index) => index >= 0 && index < sourceQueue.length);
+            const resolvedNeighbors = await Promise.all(neighborIndexes.map(async (index) => {
+              const neighbor = sourceQueue[index];
+              if (!neighbor?.youtubeId) return null;
+
+              try {
+                const neighborResolved = await resolveYouTubeStream(neighbor.youtubeId);
+                return {
+                  ...cleanQueueTrack(neighbor),
+                  uri: neighborResolved.streamUrl,
+                  requestHeaders: neighborResolved.streamHeaders,
+                };
+              } catch {
+                return null;
+              }
+            }));
+
+            const previousNeighbor = selectedIndex > 0 ? resolvedNeighbors[0] : null;
+            const nextNeighbor = selectedIndex >= 0 && selectedIndex < sourceQueue.length - 1
+              ? resolvedNeighbors[resolvedNeighbors.length - 1]
+              : null;
+
+            nativeQueue.splice(0, nativeQueue.length, ...[
+              previousNeighbor,
+              playable,
+              nextNeighbor,
+            ].filter((item): item is typeof playable => item !== null));
+          }
+
+          await setPlaybackQueue(nativeQueue, playable.id);
+
           const started = await playTrack(playable);
           setPlaying(started);
           if (started) await recordPlay(cleanQueueTrack(playable));
@@ -246,6 +269,12 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       }
 
       await persistSelection(nextTrack);
+      await setPlaybackQueue(
+        shuffle ? [nextTrack] : sourceQueue && sourceQueue.length > 0
+          ? sourceQueue
+          : [nextTrack],
+        nextTrack.id,
+      );
 
       const started = await playTrack(nextTrack);
       setPlaying(started);
@@ -319,6 +348,31 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }, [currentTime, play, queue, shuffle, track.id, track.uri]);
 
   useEffect(() => subscribePlaybackStatus((status) => {
+    setPlaying(status.playing);
+    setCurrentTime(status.currentTime);
+    setDuration(status.duration);
+    setBuffering(status.buffering);
+
+    if (status.activeTrackId && status.activeTrackId !== track.id) {
+      const activeTrack = queue.find((item) => item.id === status.activeTrackId);
+      if (activeTrack) {
+        setTrack(
+          activeTrack.source === 'youtube' && status.activeTrackUri
+            ? {
+                ...activeTrack,
+                uri: status.activeTrackUri,
+                requestHeaders: status.activeTrackHeaders,
+              }
+            : activeTrack,
+        );
+        setHasSelection(true);
+        setCurrentTime(0);
+        setDuration(activeTrack.durationSeconds ?? 0);
+        void saveCurrentTrackId(activeTrack.id);
+        void recordPlay(cleanQueueTrack(activeTrack));
+      }
+    }
+
     if (!status.didJustFinish || finishLock.current) return;
     finishLock.current = true;
 
@@ -327,7 +381,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         finishLock.current = false;
       }, 300);
     });
-  }), [nextInternal]);
+  }), [nextInternal, queue, recordPlay, track.id]);
 
   const toggle = useCallback(async () => {
     if (resolvingTrackId || !hasSelection) return;
@@ -383,13 +437,18 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     const nextQueue = queue.filter((item) => item.id !== trackId);
     setQueue(nextQueue);
     await persistQueue(nextQueue);
-  }, [persistQueue, queue]);
+
+    if (!shuffle && nextQueue.some((item) => item.id === track.id)) {
+      await setPlaybackQueue(nextQueue, track.id, { preservePlayback: true });
+    }
+  }, [persistQueue, queue, shuffle, track.id]);
 
   const clearQueue = useCallback(async () => {
     const nextQueue = queue.filter((item) => item.id === track.id);
     setQueue(nextQueue);
     await persistQueue(nextQueue);
-  }, [persistQueue, queue, track.id]);
+    if (track.uri) await setPlaybackQueue(nextQueue, track.id, { preservePlayback: true });
+  }, [persistQueue, queue, track.id, track.uri]);
 
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds]);
 
