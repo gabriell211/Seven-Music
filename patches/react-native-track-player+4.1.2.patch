@@ -2,8 +2,30 @@ diff --git a/node_modules/react-native-track-player/android/src/main/java/com/do
 index 0000000..0000000 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-@@ -545,6 +545,11 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+@@ -18,7 +18,8 @@
+ import com.facebook.react.bridge.*
+ import com.google.android.exoplayer2.DefaultLoadControl.*
+ import com.google.android.exoplayer2.Player
+ import kotlinx.coroutines.MainScope
++import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.launch
+ import timber.log.Timber
+@@ -34,7 +35,12 @@
+     private var playerOptions: Bundle? = null
+     private var isServiceBound = false
+     private var playerSetUpPromise: Promise? = null
+-    private val scope = MainScope()
++    private val coroutineScope = MainScope()
++    private val scope = object {
++        fun launch(block: suspend CoroutineScope.() -> Unit) {
++            coroutineScope.launch(block = block)
++        }
++    }
+     private lateinit var musicService: MusicService
+     private val context = reactContext
  
+@@ -546,5 +552,10 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
          if (index >= 0 && index < musicService.tracks.size) {
 -            callback.resolve(Arguments.fromBundle(musicService.tracks[index].originalItem))
 +            val originalItem = musicService.tracks[index].originalItem
@@ -15,7 +37,7 @@ index 0000000..0000000 100644
          } else {
              callback.resolve(null)
          }
-@@ -585,7 +591,7 @@ class MusicModule(reactContext: ReactContext) : ReactContextBaseJavaModule(reactContext) {
+@@ -585,7 +597,7 @@ class MusicModule(reactContext: ReactContext) : ReactContextBaseJavaModule(reactContext) {
          callback.resolve(
              if (musicService.tracks.isEmpty()) null
 -            else Arguments.fromBundle(

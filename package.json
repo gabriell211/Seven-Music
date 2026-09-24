@@ -1,6 +1,6 @@
 {
   "name": "seven-music",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -30,7 +30,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
-    "react-native-track-player": "^4.1.2",
+    "react-native-track-player": "4.1.2",
     "react-native-web": "~0.21.0",
     "react-native-webview": "13.16.1",
     "shaka-player": "^4.16.50"
