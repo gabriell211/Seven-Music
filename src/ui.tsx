@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Track } from './music';
 import { usePlayer } from './player';
 import { C } from './theme';
@@ -71,13 +72,14 @@ export function TrackRow({ track, source = false, queue }: { track: Track; sourc
 }
 
 export function MiniPlayer() {
+  const { bottom } = useSafeAreaInsets();
   const { track, hasSelection, playing, resolvingTrackId, toggle, next } = usePlayer();
   const busy = resolvingTrackId === track.id;
 
   if (!hasSelection) return null;
 
   return (
-    <Pressable onPress={() => router.push('/player')} style={s.mini}>
+    <Pressable onPress={() => router.push('/player')} style={[s.mini, { bottom: 66 + bottom }]}>
       <Artwork track={track} size={44}/>
       <View style={{ flex: 1 }}>
         <Text numberOfLines={1} style={s.rowTitle}>{track.title}</Text>

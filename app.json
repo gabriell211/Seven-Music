@@ -2,7 +2,7 @@
   "expo": {
     "name": "Seven Music",
     "slug": "seven-music",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "orientation": "portrait",
     "scheme": "sevenmusic",
     "userInterfaceStyle": "dark",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.gabriell211.sevenmusic",
-      "versionCode": 2,
+      "versionCode": 3,
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -35,17 +35,24 @@
             "audio"
           ]
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/adaptive-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#07080C",
+          "dark": {
+            "image": "./assets/adaptive-icon.png",
+            "backgroundColor": "#07080C"
+          }
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#07080C"
-    },
     "web": {
       "favicon": "./assets/icon.png"
     }

@@ -1,15 +1,17 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MiniPlayer } from '@/ui';
 import { C } from '@/theme';
 
 export default function TabsLayout() {
+  const { bottom } = useSafeAreaInsets();
   return (
     <>
       <Tabs screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: C.bg },
-        tabBarStyle: { height: 72, paddingTop: 8, paddingBottom: 10, backgroundColor: '#0B0C11', borderTopColor: '#1B1D25', borderTopWidth: 1 },
+        tabBarStyle: { height: 72 + bottom, paddingTop: 8, paddingBottom: 10 + bottom, backgroundColor: '#0B0C11', borderTopColor: '#1B1D25', borderTopWidth: 1 },
         tabBarActiveTintColor: C.purple,
         tabBarInactiveTintColor: '#777B8A',
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },

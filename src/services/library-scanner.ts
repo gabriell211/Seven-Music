@@ -1,4 +1,5 @@
 import {
+  Asset,
   AssetField,
   MediaType,
   Query,
@@ -66,23 +67,23 @@ export async function scanDeviceMusic(): Promise<ScanResult> {
       .orderBy({ key: AssetField.MODIFICATION_TIME, ascending: false })
       .limit(BATCH_SIZE)
       .offset(offset)
-      .exe();
+      .exeForMetadata();
 
     if (assets.length === 0) break;
 
     const batch = await Promise.all(
-      assets.map(async (asset): Promise<Track | null> => {
+      assets.map(async (metadata): Promise<Track | null> => {
         try {
-          const [filename, uri, durationMs] = await Promise.all([
-            asset.getFilename(),
+          const asset = new Asset(metadata.id);
+          const [filename, uri] = await Promise.all([
+            metadata.filename ?? asset.getFilename(),
             asset.getUri(),
-            asset.getDuration(),
           ]);
 
           if (!uri) return null;
 
           const parsed = parseFilename(filename);
-          const durationSeconds = Math.max(0, (durationMs ?? 0) / 1000);
+          const durationSeconds = Math.max(0, (metadata.duration ?? 0) / 1000);
 
           return {
             id: 'device:' + asset.id,

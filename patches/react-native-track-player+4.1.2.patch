@@ -48,3 +48,13 @@ index 0000000..0000000 100644
 +            }
          )
      }
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+index 0000000..0000000 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+@@ -744 +744 @@
+-        reactNativeHost.reactInstanceManager.currentReactContext
++        reactContext
+@@ -754 +754 @@
+-        reactNativeHost.reactInstanceManager.currentReactContext
++        reactContext

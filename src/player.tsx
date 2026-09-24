@@ -12,8 +12,8 @@ import type { Track } from './music';
 import { useCollections } from './collections';
 import { useMusicLibrary } from './library';
 import {
-  configurePlayback,
   pausePlayback,
+  playbackSnapshot,
   playTrack,
   resumePlayback,
   seekPlayback,
@@ -109,7 +109,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const finishLock = useRef(false);
 
   useEffect(() => {
-    void configurePlayback();
     void Promise.all([loadFavorites(), loadShuffle(), loadRepeatMode()]).then(
       ([savedFavorites, savedShuffle, savedRepeat]) => {
         setFavoriteIds(savedFavorites);
@@ -397,8 +396,17 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       return;
     }
 
-    resumePlayback();
-    setPlaying(true);
+    if (!playbackSnapshot().activeTrackId) {
+      await play(track, queue);
+      return;
+    }
+
+    try {
+      setPlaying(await playTrack(track));
+    } catch (resumeError) {
+      setPlaying(false);
+      setError(resumeError instanceof Error ? resumeError.message : 'Não foi possível retomar esta música.');
+    }
   }, [hasSelection, play, playing, queue, resolvingTrackId, track]);
 
   const seek = useCallback(async (seconds: number) => {
