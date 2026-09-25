@@ -44,7 +44,7 @@ export function Artwork({ track, size = 64 }: { track: Track; size?: number }) {
 
   return (
     <LinearGradient colors={track.colors} style={{ width: size, height: size, borderRadius: radius, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,.06)' }}>
-      <MaterialCommunityIcons name={track.id.includes('after') ? 'cat' : track.source === 'youtube' ? 'youtube' : 'album'} size={size * .4} color="rgba(255,255,255,.72)" />
+      <MaterialCommunityIcons name={track.id.includes('after') ? 'cat' : track.source === 'soundcloud' ? 'soundcloud' : 'album'} size={size * .4} color="rgba(255,255,255,.72)" />
     </LinearGradient>
   );
 }
@@ -64,7 +64,7 @@ export function TrackRow({ track, source = false, queue }: { track: Track; sourc
       <Artwork track={track} size={48}/>
       <View style={{ flex: 1 }}>
         <Text numberOfLines={1} style={s.rowTitle}>{track.title}</Text>
-        <Text numberOfLines={1} style={s.rowSub}>{resolving ? 'Carregando áudio...' : track.artist + ' · ' + track.duration + (source ? ' · YouTube' : '')}</Text>
+        <Text numberOfLines={1} style={s.rowSub}>{resolving ? 'Carregando áudio...' : track.artist + ' · ' + track.duration + (source ? ' · SoundCloud' : '')}</Text>
       </View>
       {resolving ? <ActivityIndicator size="small" color={C.purple} accessibilityLabel="Carregando áudio"/> : null}
       <Pressable
