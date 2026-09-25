@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -72,7 +73,7 @@ export default function Player() {
 
   const favorite = favorites.has(track.id);
   const busy = buffering || resolvingTrackId === track.id;
-  const onlineAudio = track.source === 'youtube';
+  const onlineAudio = track.source === 'soundcloud';
 
   return (
     <LinearGradient colors={['#0B0A10', '#08080D', '#05060A']} style={s.bg}>
@@ -158,10 +159,17 @@ export default function Player() {
             <MaterialCommunityIcons name="text" size={21} color={C.soft}/>
             <Text style={s.actionText}>Letras</Text>
           </View>
-          <View style={s.action}>
-            <MaterialCommunityIcons name={onlineAudio ? 'music-circle' : 'cellphone'} size={22} color={onlineAudio ? C.purple : C.soft}/>
-            <Text style={s.actionText}>{onlineAudio ? 'Áudio online' : 'Dispositivo'}</Text>
-          </View>
+          <Pressable
+            style={s.action}
+            disabled={!onlineAudio || !track.permalinkUrl}
+            onPress={() => {
+              if (track.permalinkUrl) void Linking.openURL(track.permalinkUrl);
+            }}
+            accessibilityLabel={onlineAudio ? 'Abrir faixa no SoundCloud' : 'Música do dispositivo'}
+          >
+            <MaterialCommunityIcons name={onlineAudio ? 'soundcloud' : 'cellphone'} size={22} color={onlineAudio ? C.purple : C.soft}/>
+            <Text style={s.actionText}>{onlineAudio ? 'SoundCloud' : 'Dispositivo'}</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
       {menuVisible ? <TrackMenu track={track} visible onClose={() => setMenuVisible(false)} showQueue /> : null}
