@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Artwork } from '@/ui';
+import { TrackMenu } from '@/components/TrackMenu';
 import { usePlayer } from '@/player';
 import { C } from '@/theme';
 
@@ -27,6 +29,7 @@ export default function Player() {
   const { width } = useWindowDimensions();
   const art = Math.min(width - 44, 360);
   const [progressWidth, setProgressWidth] = useState(1);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const {
     track,
@@ -78,7 +81,9 @@ export default function Player() {
           <Pressable accessibilityLabel="Fechar player" onPress={() => router.back()}>
             <MaterialCommunityIcons name="chevron-down" size={30} color={C.text}/>
           </Pressable>
-          <MaterialCommunityIcons name="dots-vertical" size={24} color={C.text}/>
+          <Pressable accessibilityRole="button" accessibilityLabel="Opções da música" onPress={() => setMenuVisible(true)} style={s.topMenuButton}>
+            <MaterialCommunityIcons name="dots-vertical" size={24} color={C.text}/>
+          </Pressable>
         </View>
 
         <View style={s.art}>
@@ -86,6 +91,7 @@ export default function Player() {
 
           {busy ? (
             <View style={s.buffer}>
+              <ActivityIndicator size="small" color={C.purple} accessibilityLabel="Carregando áudio"/>
               <Text style={s.bufferText}>Carregando áudio...</Text>
             </View>
           ) : null}
@@ -131,7 +137,9 @@ export default function Player() {
             <MaterialCommunityIcons name="skip-previous" size={39} color={C.text}/>
           </Pressable>
           <Pressable accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} disabled={busy} onPress={() => void toggle()} style={[s.play, busy && { opacity: .72 }]}>
-            <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={41} color="#17091F"/>
+            {busy
+              ? <ActivityIndicator size="small" color="#17091F" accessibilityLabel="Carregando áudio"/>
+              : <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={41} color="#17091F"/>}
           </Pressable>
           <Pressable accessibilityLabel="Próxima música" onPress={() => void next()}>
             <MaterialCommunityIcons name="skip-next" size={39} color={C.text}/>
@@ -156,6 +164,7 @@ export default function Player() {
           </View>
         </View>
       </SafeAreaView>
+      {menuVisible ? <TrackMenu track={track} visible onClose={() => setMenuVisible(false)} showQueue /> : null}
     </LinearGradient>
   );
 }
@@ -164,8 +173,9 @@ const s=StyleSheet.create({
   bg:{flex:1},
   safe:{flex:1,paddingHorizontal:22},
   top:{height:50,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
+  topMenuButton:{width:42,height:42,alignItems:'center',justifyContent:'center'},
   art:{alignItems:'center',justifyContent:'center',marginTop:12,marginBottom:26},
-  buffer:{position:'absolute',bottom:12,backgroundColor:'rgba(7,8,12,.82)',paddingHorizontal:12,paddingVertical:6,borderRadius:999},
+  buffer:{position:'absolute',bottom:12,backgroundColor:'rgba(7,8,12,.82)',paddingHorizontal:12,paddingVertical:6,borderRadius:999,flexDirection:'row',alignItems:'center',gap:8},
   bufferText:{color:C.soft,fontSize:10.5,fontWeight:'700'},
   meta:{flexDirection:'row',alignItems:'center',gap:10},
   title:{color:C.text,fontWeight:'900',fontSize:25,letterSpacing:-.4},

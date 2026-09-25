@@ -20,6 +20,7 @@ export default function RootLayout() {
             <Stack.Screen name="favorites" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="playlist/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="equalizer" options={{ animation: 'slide_from_right' }} />
           </Stack>
         </PlayerProvider>
       </CollectionsProvider>

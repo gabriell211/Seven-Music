@@ -2,7 +2,7 @@
   "expo": {
     "name": "Seven Music",
     "slug": "seven-music",
-    "version": "0.2.4",
+    "version": "0.2.5",
     "orientation": "portrait",
     "scheme": "sevenmusic",
     "userInterfaceStyle": "dark",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.gabriell211.sevenmusic",
-      "versionCode": 3,
+      "versionCode": 4,
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

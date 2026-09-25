@@ -6,6 +6,7 @@ import TrackPlayer, {
 import type { Track as NativeTrack } from 'react-native-track-player';
 import type { Track } from '@/music';
 import playbackService from './playback-service';
+import { applyEqualizerSettings, loadEqualizerSettings } from '../equalizer';
 
 export type AudioStatus = {
   playing: boolean;
@@ -120,6 +121,11 @@ export async function configurePlayback(): Promise<void> {
 
     installSubscriptions();
     configured = true;
+    try {
+      await applyEqualizerSettings(await loadEqualizerSettings());
+    } catch {
+      // A device without an equalizer must still be able to play audio.
+    }
   })();
 
   try {

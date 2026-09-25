@@ -89,6 +89,8 @@ export default function Settings() {
           <View style={s.divider}/>
           <SettingRow icon="weather-night" label="Aparência" value="Escuro"/>
           <View style={s.divider}/>
+          <SettingRow icon="tune-vertical" label="Equalizador" onPress={() => router.push('/equalizer')}/>
+          <View style={s.divider}/>
           <SettingRow icon="archive-outline" label="Cache e armazenamento" onPress={clearCache}/>
           <View style={s.divider}/>
           <SettingRow icon="folder-music-outline" label={busy ? 'Lendo músicas...' : 'Importar músicas'} onPress={() => void importMusic()}/>

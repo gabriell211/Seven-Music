@@ -2,8 +2,7 @@ diff --git a/node_modules/react-native-track-player/android/src/main/java/com/do
 index 0000000..0000000 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-@@ -18,7 +18,8 @@
- import com.facebook.react.bridge.*
+@@ -19,6 +19,7 @@
  import com.google.android.exoplayer2.DefaultLoadControl.*
  import com.google.android.exoplayer2.Player
  import kotlinx.coroutines.MainScope
@@ -25,7 +24,45 @@ index 0000000..0000000 100644
      private lateinit var musicService: MusicService
      private val context = reactContext
  
-@@ -546,5 +552,10 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+@@ -496,6 +502,35 @@
+     }
+ 
+     @ReactMethod
++    fun getEqualizerInfo(callback: Promise) = scope.launch {
++        if (verifyServiceBoundOrReject(callback)) return@launch
++        try {
++            val (frequencies, minDb, maxDb) = musicService.getEqualizerInfo()
++            val result = Arguments.createMap()
++            val bands = Arguments.createArray()
++            frequencies.forEach { bands.pushDouble(it) }
++            result.putArray("frequencies", bands)
++            result.putDouble("minDb", minDb)
++            result.putDouble("maxDb", maxDb)
++            callback.resolve(result)
++        } catch (exception: Exception) {
++            rejectWithException(callback, exception)
++        }
++    }
++
++    @ReactMethod
++    fun setEqualizer(enabled: Boolean, levels: ReadableArray, callback: Promise) = scope.launch {
++        if (verifyServiceBoundOrReject(callback)) return@launch
++        try {
++            val gains = (0 until levels.size()).map { levels.getDouble(it) }
++            musicService.setEqualizer(enabled, gains)
++            callback.resolve(null)
++        } catch (exception: Exception) {
++            rejectWithException(callback, exception)
++        }
++    }
++
++    @ReactMethod
+     fun setRate(rate: Float, callback: Promise) = scope.launch {
+         if (verifyServiceBoundOrReject(callback)) return@launch
+ 
+@@ -545,7 +580,12 @@
+         if (verifyServiceBoundOrReject(callback)) return@launch
+ 
          if (index >= 0 && index < musicService.tracks.size) {
 -            callback.resolve(Arguments.fromBundle(musicService.tracks[index].originalItem))
 +            val originalItem = musicService.tracks[index].originalItem
@@ -37,7 +74,8 @@ index 0000000..0000000 100644
          } else {
              callback.resolve(null)
          }
-@@ -585,7 +597,7 @@ class MusicModule(reactContext: ReactContext) : ReactContextBaseJavaModule(reactContext) {
+@@ -584,9 +624,9 @@
+         if (verifyServiceBoundOrReject(callback)) return@launch
          callback.resolve(
              if (musicService.tracks.isEmpty()) null
 -            else Arguments.fromBundle(
@@ -48,13 +86,153 @@ index 0000000..0000000 100644
 +            }
          )
      }
+ 
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 index 0000000..0000000 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-@@ -744 +744 @@
+@@ -1,6 +1,8 @@
+ package com.doublesymmetry.trackplayer.service
+ 
+ import android.app.*
++import android.media.AudioManager
++import android.media.audiofx.Equalizer
+ import android.content.Context
+ import android.content.Intent
+ import android.content.pm.ServiceInfo
+@@ -16,6 +18,7 @@
+ import com.doublesymmetry.kotlinaudio.models.*
+ import com.doublesymmetry.kotlinaudio.models.NotificationButton.*
+ import com.doublesymmetry.kotlinaudio.players.QueuedAudioPlayer
++import com.doublesymmetry.kotlinaudio.players.BaseAudioPlayer
+ import com.doublesymmetry.trackplayer.R as TrackPlayerR
+ import com.doublesymmetry.trackplayer.extensions.NumberExt.Companion.toMilliseconds
+ import com.doublesymmetry.trackplayer.extensions.NumberExt.Companion.toSeconds
+@@ -34,6 +37,8 @@
+ import com.facebook.react.jstasks.HeadlessJsTaskConfig
+ import com.facebook.react.modules.core.DeviceEventManagerModule
+ import com.google.android.exoplayer2.ui.R as ExoPlayerR
++import com.google.android.exoplayer2.ExoPlayer
++import com.google.android.exoplayer2.Player
+ import kotlinx.coroutines.*
+ import kotlinx.coroutines.flow.flow
+ import java.util.concurrent.TimeUnit
+@@ -43,6 +48,11 @@
+ @MainThread
+ class MusicService : HeadlessJsTaskService() {
+     private lateinit var player: QueuedAudioPlayer
++    private var equalizer: Equalizer? = null
++    private var equalizerSessionId = 0
++    private var currentAudioSessionId = 0
++    private var equalizerEnabled = false
++    private var equalizerLevels = emptyList<Double>()
+     private val binder = MusicBinder()
+     private val scope = MainScope()
+     private var progressUpdateJob: Job? = null
+@@ -157,6 +167,25 @@
+         val automaticallyUpdateNotificationMetadata = playerOptions?.getBoolean(AUTO_UPDATE_METADATA, true) ?: true
+ 
+         player = QueuedAudioPlayer(this@MusicService, playerConfig, bufferConfig, cacheConfig)
++        // kotlin-audio does not expose its ExoPlayer audio session. Listen to the
++        // actual session so effects survive track changes and background playback.
++        val method = BaseAudioPlayer::class.java.getDeclaredMethod("getExoPlayer")
++        method.isAccessible = true
++        val exoPlayer = method.invoke(player) as ExoPlayer
++        currentAudioSessionId = exoPlayer.audioSessionId
++        exoPlayer.addListener(object : Player.Listener {
++            override fun onAudioSessionIdChanged(audioSessionId: Int) {
++                currentAudioSessionId = audioSessionId
++                try {
++                    applyEqualizer()
++                } catch (exception: Exception) {
++                    equalizer?.release()
++                    equalizer = null
++                    equalizerSessionId = 0
++                    Timber.e(exception, "Could not attach equalizer to audio session")
++                }
++            }
++        })
+         player.automaticallyUpdateNotificationMetadata = automaticallyUpdateNotificationMetadata
+         observeEvents()
+         setupForegrounding()
+@@ -741,7 +770,7 @@
+ 
+     @MainThread
+     private fun emit(event: String, data: Bundle? = null) {
 -        reactNativeHost.reactInstanceManager.currentReactContext
 +        reactContext
-@@ -754 +754 @@
+             ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, data?.let { Arguments.fromBundle(it) })
+     }
+@@ -751,7 +780,7 @@
+         val payload = Arguments.createArray()
+         data.forEach { payload.pushMap(Arguments.fromBundle(it)) }
+ 
 -        reactNativeHost.reactInstanceManager.currentReactContext
 +        reactContext
+             ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, payload)
+     }
+@@ -799,11 +828,62 @@
+     @MainThread
+     override fun onDestroy() {
+         super.onDestroy()
++        equalizer?.release()
++        equalizer = null
+         if (::player.isInitialized) {
+             player.destroy()
+         }
+ 
+         progressUpdateJob?.cancel()
++    }
++
++    @MainThread
++    fun getEqualizerInfo(): Triple<List<Double>, Double, Double> {
++        // Probe a private session before the first song starts. Never attach to
++        // global session 0, which Android has deprecated for insert effects.
++        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
++        val session = if (currentAudioSessionId > 0) currentAudioSessionId else audioManager.generateAudioSessionId()
++        require(session > 0) { "No audio session available" }
++        val probe = equalizer?.takeIf { equalizerSessionId == session } ?: Equalizer(0, session)
++        try {
++            val frequencies = (0 until probe.numberOfBands.toInt()).map { band ->
++                probe.getCenterFreq(band.toShort()) / 1000.0
++            }
++            val range = probe.bandLevelRange
++            return Triple(frequencies, range[0] / 100.0, range[1] / 100.0)
++        } finally {
++            if (probe !== equalizer) probe.release()
++        }
++    }
++
++    @MainThread
++    fun setEqualizer(enabled: Boolean, levels: List<Double>) {
++        equalizerEnabled = enabled
++        equalizerLevels = levels
++        applyEqualizer()
++    }
++
++    @MainThread
++    private fun applyEqualizer() {
++        if (!equalizerEnabled || currentAudioSessionId <= 0) {
++            equalizer?.release()
++            equalizer = null
++            equalizerSessionId = 0
++            return
++        }
++        if (equalizerSessionId != currentAudioSessionId) {
++            equalizer?.release()
++            equalizer = Equalizer(0, currentAudioSessionId)
++            equalizerSessionId = currentAudioSessionId
++        }
++        val effect = equalizer ?: return
++        val range = effect.bandLevelRange
++        for (band in 0 until effect.numberOfBands.toInt()) {
++            val requested = equalizerLevels.getOrElse(band) { 0.0 }
++            val milliBels = (requested * 100).toInt().coerceIn(range[0].toInt(), range[1].toInt())
++            effect.setBandLevel(band.toShort(), milliBels.toShort())
++        }
++        effect.enabled = true
+     }
+ 
+     @MainThread

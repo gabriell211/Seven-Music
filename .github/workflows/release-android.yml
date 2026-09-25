@@ -110,6 +110,9 @@ jobs:
           - Reprodução online exclusivamente em áudio via resolver yt-dlp
           - Links "Ver tudo" da Home abrem histórico, músicas locais e playlists
           - Mini-player, fila, favoritos, shuffle e repeat
+          - Equalizador Android com bandas ajustáveis e predefinições
+          - Menu de opções das músicas para favoritos e playlists
+          - Indicador animado durante o carregamento do áudio
           - Reprodução em segundo plano para áudio local
           - API Seven Music em produção
           - Ícone, adaptive icon e splash oficiais do Seven Music
