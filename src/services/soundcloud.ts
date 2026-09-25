@@ -92,8 +92,12 @@ export async function searchSoundCloud(query: string, signal?: AbortSignal): Pro
     }));
 }
 
-export async function resolveSoundCloudStream(trackUrn: string): Promise<ResolvedSoundCloudStream> {
+export async function resolveSoundCloudStream(
+  trackUrn: string,
+  permalinkUrl?: string,
+): Promise<ResolvedSoundCloudStream> {
+  const query = permalinkUrl ? '?url=' + encodeURIComponent(permalinkUrl) : '';
   return apiFetch<ResolvedSoundCloudStream>(
-    '/v1/soundcloud/resolve/' + encodeURIComponent(trackUrn),
+    '/v1/soundcloud/resolve/' + encodeURIComponent(trackUrn) + query,
   );
 }
