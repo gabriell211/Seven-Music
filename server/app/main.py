@@ -12,12 +12,12 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query
 
 
-SOUNDCLOUD_API_BASE = "https://api.soundcloud.com"
+SOUNDCLOUD_API_BASE = "https://api-v2.soundcloud.com"
 TRACK_URN_RE = re.compile(r"^(?:soundcloud:tracks:)?\d+$")
 
 app = FastAPI(
     title="Seven Music API",
-    version="0.3.0",
+    version="0.3.1",
     docs_url=None,
     redoc_url=None,
 )
@@ -29,32 +29,62 @@ class SoundCloudApiError(RuntimeError):
         super().__init__(message)
 
 
-def _authorization_header() -> str:
-    raw = os.getenv("SOUNDCLOUD_ACCESS_TOKEN", "").strip()
-    if not raw:
+def _client_id() -> str:
+    client_id = os.getenv("SOUNDCLOUD_CLIENT_ID", "").strip()
+    if not client_id:
         raise SoundCloudApiError(
             503,
-            "SOUNDCLOUD_ACCESS_TOKEN não está configurado no servidor.",
+            "SOUNDCLOUD_CLIENT_ID não está configurado no servidor.",
         )
-    if raw.lower().startswith("oauth "):
-        return raw
-    return f"OAuth {raw}"
+    return client_id
+
+
+def _access_token() -> str | None:
+    raw = os.getenv("SOUNDCLOUD_ACCESS_TOKEN", "").strip()
+    if not raw:
+        return None
+    return raw[6:].strip() if raw.lower().startswith("oauth ") else raw
 
 
 def _soundcloud_request(
-    path: str,
+    path_or_url: str,
     params: dict[str, str | int] | None = None,
+    *,
+    authenticated: bool = False,
 ) -> Any:
-    query = urllib.parse.urlencode(params or {})
-    url = SOUNDCLOUD_API_BASE + path + (f"?{query}" if query else "")
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json; charset=utf-8",
-            "Authorization": _authorization_header(),
-            "User-Agent": "SevenMusic/0.3",
-        },
+    query_params: dict[str, str | int] = {"client_id": _client_id()}
+    if params:
+        query_params.update(params)
+
+    separator = "&" if "?" in path_or_url else "?"
+    base_url = (
+        path_or_url
+        if path_or_url.startswith(("https://", "http://"))
+        else SOUNDCLOUD_API_BASE + path_or_url
     )
+    url = base_url + separator + urllib.parse.urlencode(query_params)
+
+    headers = {
+        "Accept": "application/json",
+        "Origin": "https://soundcloud.com",
+        "Referer": "https://soundcloud.com/",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/154.0.0.0 Safari/537.36"
+        ),
+    }
+
+    if authenticated:
+        token = _access_token()
+        if not token:
+            raise SoundCloudApiError(
+                503,
+                "SOUNDCLOUD_ACCESS_TOKEN não está configurado no servidor.",
+            )
+        headers["Authorization"] = f"OAuth {token}"
+
+    request = urllib.request.Request(url, headers=headers)
 
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
@@ -62,9 +92,9 @@ def _soundcloud_request(
     except urllib.error.HTTPError as exc:
         status = int(exc.code)
         if status == 401:
-            message = "A autenticação do SoundCloud expirou ou é inválida."
+            message = "O SoundCloud recusou a credencial usada nesta requisição."
         elif status == 403:
-            message = "O SoundCloud bloqueou o acesso a este conteúdo."
+            message = "O SoundCloud bloqueou esta requisição ou faixa."
         elif status == 404:
             message = "Faixa não encontrada no SoundCloud."
         elif status == 429:
@@ -91,6 +121,36 @@ def _track_urn(track: dict[str, Any]) -> str | None:
     return None
 
 
+def _numeric_track_id(track_urn: str) -> str:
+    return track_urn.rsplit(":", 1)[-1]
+
+
+def _transcodings(track: dict[str, Any]) -> list[dict[str, Any]]:
+    media = track.get("media")
+    if not isinstance(media, dict):
+        return []
+
+    raw = media.get("transcodings")
+    if not isinstance(raw, list):
+        return []
+
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _has_full_stream(track: dict[str, Any]) -> bool:
+    if track.get("streamable") is False:
+        return False
+    if str(track.get("policy") or "").upper() in {"BLOCK", "SNIP"}:
+        return False
+
+    return any(
+        isinstance(item.get("url"), str)
+        and bool(item.get("url"))
+        and item.get("snipped") is not True
+        for item in _transcodings(track)
+    )
+
+
 def _normalize_track(track: dict[str, Any]) -> dict[str, Any] | None:
     urn = _track_urn(track)
     if not urn:
@@ -113,7 +173,7 @@ def _normalize_track(track: dict[str, Any]) -> dict[str, Any] | None:
         or "Artista desconhecido"
     ).strip()
 
-    duration_ms = track.get("duration") or 0
+    duration_ms = track.get("full_duration") or track.get("duration") or 0
     try:
         duration_seconds = max(0, round(float(duration_ms) / 1000))
     except (TypeError, ValueError):
@@ -128,24 +188,71 @@ def _normalize_track(track: dict[str, Any]) -> dict[str, Any] | None:
         "durationSeconds": duration_seconds,
         "thumbnail": str(artwork) if artwork else None,
         "permalinkUrl": str(track.get("permalink_url") or "") or None,
-        "access": str(track.get("access") or "playable"),
+        "access": "playable" if _has_full_stream(track) else "blocked",
     }
 
 
-def _select_stream(streams: dict[str, Any]) -> tuple[str, str]:
-    preferred = (
-        ("hls_aac_160_url", "hls-aac-160"),
-        ("hls_aac_96_url", "hls-aac-96"),
-    )
-    for field, label in preferred:
-        url = streams.get(field)
-        if isinstance(url, str) and url:
-            return url, label
+def _stream_score(transcoding: dict[str, Any]) -> tuple[int, int, int]:
+    fmt = transcoding.get("format")
+    if not isinstance(fmt, dict):
+        fmt = {}
 
-    raise SoundCloudApiError(
-        409,
-        "Esta faixa não possui um stream AAC completo disponível para reprodução.",
+    protocol = str(fmt.get("protocol") or "").lower()
+    mime_type = str(fmt.get("mime_type") or "").lower()
+    preset = str(transcoding.get("preset") or "").lower()
+    quality = str(transcoding.get("quality") or "").lower()
+
+    # Prefer a direct MP3 URL for native mobile playback when available.
+    protocol_score = 4 if protocol == "progressive" else 3 if protocol == "hls" else 0
+    codec_score = (
+        4 if "audio/mpeg" in mime_type
+        else 3 if "audio/mp4" in mime_type or "aac" in preset
+        else 2 if "opus" in mime_type or "opus" in preset
+        else 1
     )
+    quality_score = 2 if quality == "hq" else 1 if quality == "sq" else 0
+    return protocol_score, codec_score, quality_score
+
+
+def _select_transcoding(track: dict[str, Any]) -> dict[str, Any]:
+    candidates = [
+        item
+        for item in _transcodings(track)
+        if isinstance(item.get("url"), str)
+        and bool(item.get("url"))
+        and item.get("snipped") is not True
+    ]
+    if not candidates:
+        raise SoundCloudApiError(
+            409,
+            "Esta faixa não possui um stream completo disponível para reprodução.",
+        )
+
+    candidates.sort(key=_stream_score, reverse=True)
+    return candidates[0]
+
+
+def _resolve_transcoding(track: dict[str, Any]) -> tuple[str, str]:
+    transcoding = _select_transcoding(track)
+    transcoding_url = str(transcoding["url"])
+
+    params: dict[str, str] = {}
+    track_authorization = track.get("track_authorization") or track.get("track_auth")
+    if isinstance(track_authorization, str) and track_authorization:
+        params["track_authorization"] = track_authorization
+
+    payload = _soundcloud_request(transcoding_url, params)
+    if not isinstance(payload, dict) or not isinstance(payload.get("url"), str):
+        raise SoundCloudApiError(
+            502,
+            "O SoundCloud retornou uma URL de áudio inválida.",
+        )
+
+    fmt = transcoding.get("format")
+    protocol = str(fmt.get("protocol") or "") if isinstance(fmt, dict) else ""
+    preset = str(transcoding.get("preset") or "")
+    label = "-".join(part for part in (protocol, preset) if part) or "soundcloud"
+    return str(payload["url"]), label
 
 
 def _raise_http(exc: SoundCloudApiError) -> None:
@@ -158,9 +265,9 @@ async def root() -> dict[str, Any]:
     return {
         "name": "Seven Music API",
         "status": "online",
-        "version": "0.3.0",
-        "provider": "soundcloud",
-        "configured": bool(os.getenv("SOUNDCLOUD_ACCESS_TOKEN", "").strip()),
+        "version": "0.3.1",
+        "provider": "soundcloud-api-v2",
+        "configured": bool(os.getenv("SOUNDCLOUD_CLIENT_ID", "").strip()),
     }
 
 
@@ -170,11 +277,30 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/v1/soundcloud/status")
-async def soundcloud_status() -> dict[str, bool]:
+async def soundcloud_status() -> dict[str, Any]:
     return {
-        "configured": bool(os.getenv("SOUNDCLOUD_ACCESS_TOKEN", "").strip()),
+        "configured": bool(os.getenv("SOUNDCLOUD_CLIENT_ID", "").strip()),
         "clientIdConfigured": bool(os.getenv("SOUNDCLOUD_CLIENT_ID", "").strip()),
+        "accessTokenConfigured": bool(os.getenv("SOUNDCLOUD_ACCESS_TOKEN", "").strip()),
+        "apiBase": SOUNDCLOUD_API_BASE,
     }
+
+
+@app.get("/v1/soundcloud/me")
+async def soundcloud_me() -> dict[str, Any]:
+    try:
+        payload = await asyncio.to_thread(
+            _soundcloud_request,
+            "/me",
+            None,
+            authenticated=True,
+        )
+    except SoundCloudApiError as exc:
+        _raise_http(exc)
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=502, detail="Resposta de usuário inválida.")
+    return payload
 
 
 @app.get("/v1/soundcloud/search")
@@ -185,32 +311,27 @@ async def soundcloud_search(
     try:
         payload = await asyncio.to_thread(
             _soundcloud_request,
-            "/tracks",
+            "/search/tracks",
             {
                 "q": q.strip(),
-                "access": "playable",
                 "limit": limit,
-                "linked_partitioning": "true",
+                "offset": 0,
+                "linked_partitioning": 1,
+                "app_locale": "pt_BR",
             },
         )
     except SoundCloudApiError as exc:
         _raise_http(exc)
 
-    raw_items: list[Any]
-    if isinstance(payload, dict):
-        collection = payload.get("collection")
-        raw_items = collection if isinstance(collection, list) else []
-    elif isinstance(payload, list):
-        raw_items = payload
-    else:
-        raw_items = []
+    collection = payload.get("collection") if isinstance(payload, dict) else None
+    raw_items = collection if isinstance(collection, list) else []
 
     items: list[dict[str, Any]] = []
     for raw in raw_items:
         if not isinstance(raw, dict):
             continue
         normalized = _normalize_track(raw)
-        if normalized is not None:
+        if normalized is not None and normalized["access"] == "playable":
             items.append(normalized)
 
     return {"items": items[:limit]}
@@ -221,23 +342,31 @@ async def soundcloud_resolve(track_urn: str) -> dict[str, Any]:
     if not TRACK_URN_RE.fullmatch(track_urn):
         raise HTTPException(status_code=422, detail="URN de faixa inválido.")
 
-    encoded_urn = urllib.parse.quote(track_urn, safe=":")
+    track_id = _numeric_track_id(track_urn)
     try:
-        payload = await asyncio.to_thread(
+        track = await asyncio.to_thread(
             _soundcloud_request,
-            f"/tracks/{encoded_urn}/streams",
+            f"/tracks/{track_id}",
         )
-        if not isinstance(payload, dict):
+        if not isinstance(track, dict):
             raise SoundCloudApiError(
                 502,
-                "O SoundCloud retornou uma resposta de stream inválida.",
+                "O SoundCloud retornou metadados de faixa inválidos.",
             )
-        stream_url, stream_format = _select_stream(payload)
+        if not _has_full_stream(track):
+            raise SoundCloudApiError(
+                409,
+                "Esta faixa não está disponível para reprodução completa.",
+            )
+        stream_url, stream_format = await asyncio.to_thread(
+            _resolve_transcoding,
+            track,
+        )
     except SoundCloudApiError as exc:
         _raise_http(exc)
 
     return {
-        "trackUrn": track_urn,
+        "trackUrn": _track_urn(track) or track_urn,
         "streamUrl": stream_url,
         "streamHeaders": {},
         "format": stream_format,
