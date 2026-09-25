@@ -5,13 +5,14 @@ export type Track = {
   album?: string;
   duration: string;
   durationSeconds?: number;
-  source: 'local' | 'youtube';
+  source: 'local' | 'soundcloud';
   colors: readonly [string, string, ...string[]];
   uri?: string;
   requestHeaders?: Record<string, string>;
   assetId?: string;
   filename?: string;
-  youtubeId?: string;
+  soundcloudUrn?: string;
+  permalinkUrl?: string;
   thumbnail?: string;
 };
 
@@ -21,11 +22,4 @@ export const localTracks: Track[] = [
   { id: 'faint', title: 'Faint', artist: 'Linkin Park', album: 'Meteora', duration: '2:42', source: 'local', colors: ['#3C3227', '#A08A63', '#111318'] },
   { id: 'sweater', title: 'Sweater Weather', artist: 'The Neighbourhood', duration: '4:00', source: 'local', colors: ['#252525', '#747474', '#101010'] },
   { id: 'montagem', title: 'Montagem Corsetão', artist: 'MC GW', duration: '2:10', source: 'local', colors: ['#17051E', '#7C1286', '#050509'] }
-];
-
-export const youtubeTracks: Track[] = [
-  { id: 'yt-numb', youtubeId: 'demo-numb', title: 'Numb (Official Music Video)', artist: 'Linkin Park', duration: '3:07', source: 'youtube', colors: ['#1C1B18', '#9A8B71', '#151515'] },
-  { id: 'yt-end', youtubeId: 'demo-end', title: 'In the End (Official Music Video)', artist: 'Linkin Park', duration: '3:39', source: 'youtube', colors: ['#21180E', '#73543C', '#101014'] },
-  { id: 'yt-crawling', youtubeId: 'demo-crawling', title: 'Crawling (Official Music Video)', artist: 'Linkin Park', duration: '3:38', source: 'youtube', colors: ['#0C2226', '#5C8E93', '#101014'] },
-  { id: 'yt-step', youtubeId: 'demo-step', title: 'One Step Closer (Official Video)', artist: 'Linkin Park', duration: '2:58', source: 'youtube', colors: ['#1A1715', '#806A58', '#0B0C10'] }
 ];
