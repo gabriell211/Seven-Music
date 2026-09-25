@@ -1,13 +1,20 @@
 # Seven Music API
 
-Backend isolado para a fonte online do Seven Music.
+Backend do Seven Music para pesquisa e reprodução online via SoundCloud.
 
 ## Stack
 
-- FastAPI na porta 8787
-- yt-dlp 2026.8.19
-- Deno 2.9.7 para desafios JavaScript do YouTube
-- bgutil PO Token Provider 2.0.0
+- FastAPI
+- API pública do SoundCloud
+- Streaming AAC/HLS
+- Sem yt-dlp, cookies ou PO Token
+
+## Variáveis
+
+    SOUNDCLOUD_CLIENT_ID=...
+    SOUNDCLOUD_ACCESS_TOKEN=...
+
+O access token é enviado somente do backend ao SoundCloud no header `Authorization: OAuth ...`.
 
 ## Subir
 
@@ -20,8 +27,10 @@ Teste:
 
 Pesquisa:
 
-    curl "http://localhost:8787/v1/youtube/search?q=linkin%20park&limit=5"
+    curl "http://localhost:8787/v1/soundcloud/search?q=linkin%20park&limit=5"
 
-No app, configure EXPO_PUBLIC_SEVEN_API_URL apontando para o IP/host dessa API.
+Resolver stream:
 
-Em produção, configure `YTDLP_COOKIES_B64` como secret do serviço Render com o conteúdo de um `cookies.txt` do YouTube em Base64. Para execução local, monte o arquivo fora do repositório e defina `YTDLP_COOKIES_FILE`. `YTDLP_PROXY` pode definir uma saída de rede própria. Nunca versione cookies ou credenciais.
+    curl "http://localhost:8787/v1/soundcloud/resolve/soundcloud:tracks:TRACK_ID"
+
+O resolver prefere `hls_aac_160_url` e usa `hls_aac_96_url` como fallback. Faixas sem stream completo disponível são rejeitadas em vez de reproduzir apenas preview.
