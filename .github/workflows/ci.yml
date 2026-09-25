@@ -18,7 +18,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
 
-  youtube-service:
+  soundcloud-service:
     runs-on: ubuntu-latest
     defaults:
       run:
