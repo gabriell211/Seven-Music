@@ -229,21 +229,23 @@ def _search_upstream_sync(query: str, limit: int) -> list[dict[str, Any]]:
     raise RuntimeError("all upstream search resolvers failed") from last_error
 
 
-def _extractor_args() -> dict[str, dict[str, list[str]]]:
+def _extractor_args(
+    *,
+    clients: list[str] | None = None,
+    include_pot: bool = False,
+) -> dict[str, dict[str, list[str]]]:
     provider_url = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()
-    script_home = os.getenv("YTDLP_POT_SCRIPT_HOME", "").strip()
-
-    has_provider = bool(provider_url or script_home)
-    clients = ["mweb", "web", "web_embedded"] if has_provider else ["web_embedded", "android_vr", "web"]
+    selected_clients = clients or ["web_embedded", "android_vr", "web"]
 
     args: dict[str, dict[str, list[str]]] = {
-        "youtube": {"player_client": clients}
+        "youtube": {"player_client": selected_clients}
     }
 
-    if provider_url:
+    # Only the dedicated POT service uses the long-lived HTTP provider.
+    # The bgutil script provider was timing out while spawning Deno on the
+    # other Render regions, so never attach it to ordinary extraction.
+    if include_pot and provider_url:
         args["youtubepot-bgutilhttp"] = {"base_url": [provider_url]}
-    elif script_home:
-        args["youtubepot-bgutilscript"] = {"server_home": [script_home]}
 
     return args
 
@@ -473,18 +475,18 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
 
     url = "https://www.youtube.com/watch?v=" + video_id
     provider_url = os.getenv("YTDLP_POT_PROVIDER_URL", "").strip()
-    script_home = os.getenv("YTDLP_POT_SCRIPT_HOME", "").strip()
     js_runtimes = _available_js_runtimes()
 
-    strategies: list[tuple[list[str], str]] = []
+    strategies: list[tuple[list[str], str, bool]] = []
 
-    if provider_url or script_home:
+    if provider_url:
         # Current yt-dlp guidance recommends mweb + a PO Token provider.
         # Try it first so we do not spend the Vercel timeout budget on a
         # datacenter-blocked client before POT generation even starts.
         strategies.append((
             ["mweb"],
             "bestaudio[protocol^=http]/bestaudio",
+            True,
         ))
 
     if js_runtimes:
@@ -493,16 +495,19 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
         strategies.append((
             ["android_vr"],
             "bestaudio[protocol^=http]/bestaudio",
+            False,
         ))
         # web_safari HLS can remain playable when direct GVS URLs are guarded.
         strategies.append((
             ["web_safari"],
             "bestaudio[protocol^=m3u8]/bestaudio[protocol^=http]/bestaudio",
+            False,
         ))
         # Embedded is limited to embeddable videos but is cheap to try.
         strategies.append((
             ["web_embedded"],
             "bestaudio[protocol^=http]/bestaudio",
+            False,
         ))
     else:
         # Vercel should normally delegate to Render. Keep lightweight local
@@ -511,28 +516,31 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
             (
                 ["web_safari"],
                 "bestaudio[protocol^=m3u8]/bestaudio",
+                False,
             ),
             (
                 ["web_embedded"],
                 "bestaudio[protocol^=http]/bestaudio",
+                False,
             ),
             (
                 ["android_vr"],
                 "bestaudio[protocol^=http]/bestaudio",
+                False,
             ),
         ])
 
     last_error: Exception | None = None
 
-    for clients, format_selector in strategies:
+    for clients, format_selector, use_pot in strategies:
         options = {
             **_base_ydl_options(),
             "format": format_selector,
             "skip_download": True,
-            "extractor_args": {
-                **_extractor_args(),
-                "youtube": {"player_client": clients},
-            },
+            "extractor_args": _extractor_args(
+                clients=clients,
+                include_pot=use_pot,
+            ),
         }
 
         try:
