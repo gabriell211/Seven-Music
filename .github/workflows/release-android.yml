@@ -2,7 +2,14 @@ name: Release Android
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
+    paths:
+      - package.json
+      - package-lock.json
+      - app.json
+      - .github/workflows/release-android.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,12 +33,13 @@ jobs:
         shell: bash
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match package version v$VERSION" >&2
+          TAG="v$VERSION"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $TAG" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check existing release
         id: existing
@@ -106,8 +114,10 @@ jobs:
           ### Destaques
           - Player local Android/iOS
           - Páginas separadas para músicas locais e online
-          - Busca local no aparelho e busca online no SoundCloud
-          - Reprodução online em AAC/HLS via SoundCloud
+          - Busca local no aparelho e busca online no SoundCloud API v2
+          - Reprodução online via transcodings expostos pelo cliente web do SoundCloud
+          - HLS/AAC como preferência, com fallback para streams completos compatíveis
+          - YouTube/yt-dlp removidos da arquitetura
           - Links "Ver tudo" da Home abrem histórico, músicas locais e playlists
           - Mini-player, fila, favoritos, shuffle e repeat
           - Equalizador Android com bandas ajustáveis e predefinições
@@ -127,7 +137,7 @@ jobs:
           gh release create "$TAG" \
             "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk" \
             "dist/Seven-Music-v${{ steps.version.outputs.version }}-android.apk.sha256" \
-            --verify-tag \
+            --target "$GITHUB_SHA" \
             --title "Seven Music v${{ steps.version.outputs.version }}" \
             --notes-file release-notes.md
 
