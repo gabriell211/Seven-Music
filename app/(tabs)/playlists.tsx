@@ -80,7 +80,7 @@ export default function Playlists() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.emptyTitle}>Crie sua primeira playlist</Text>
-              <Text style={s.emptyText}>Organize músicas locais e do YouTube do seu jeito.</Text>
+              <Text style={s.emptyText}>Organize músicas locais e do SoundCloud do seu jeito.</Text>
             </View>
           </Pressable>
         ) : null}
