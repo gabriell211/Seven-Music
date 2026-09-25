@@ -8,6 +8,9 @@ type SearchItem = {
   thumbnail: string | null;
   permalinkUrl: string | null;
   access: 'playable' | 'preview' | 'blocked' | string;
+  transcodingUrl: string | null;
+  transcodingFormat: string | null;
+  trackAuthorization: string | null;
 };
 
 type SearchResponse = { items: SearchItem[] };
@@ -87,6 +90,8 @@ export async function searchSoundCloud(query: string, signal?: AbortSignal): Pro
       duration: formatDuration(item.durationSeconds),
       thumbnail: item.thumbnail ?? undefined,
       permalinkUrl: item.permalinkUrl ?? undefined,
+      soundcloudTranscodingUrl: item.transcodingUrl ?? undefined,
+      soundcloudTrackAuthorization: item.trackAuthorization ?? undefined,
       source: 'soundcloud' as const,
       colors: paletteFor(item.trackUrn),
     }));
@@ -94,10 +99,19 @@ export async function searchSoundCloud(query: string, signal?: AbortSignal): Pro
 
 export async function resolveSoundCloudStream(
   trackUrn: string,
-  permalinkUrl?: string,
+  options: {
+    permalinkUrl?: string;
+    transcodingUrl?: string;
+    trackAuthorization?: string;
+  } = {},
 ): Promise<ResolvedSoundCloudStream> {
-  const query = permalinkUrl ? '?url=' + encodeURIComponent(permalinkUrl) : '';
+  const params = new URLSearchParams();
+  if (options.transcodingUrl) params.set('transcoding_url', options.transcodingUrl);
+  if (options.trackAuthorization) params.set('track_authorization', options.trackAuthorization);
+  if (options.permalinkUrl) params.set('url', options.permalinkUrl);
+
+  const query = params.toString();
   return apiFetch<ResolvedSoundCloudStream>(
-    '/v1/soundcloud/resolve/' + encodeURIComponent(trackUrn) + query,
+    '/v1/soundcloud/resolve/' + encodeURIComponent(trackUrn) + (query ? '?' + query : ''),
   );
 }
