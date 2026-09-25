@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Track } from '@/music';
-import { searchYouTube, youtubeApiConfigured } from '@/services/youtube';
+import { searchSoundCloud, soundCloudApiConfigured } from '@/services/soundcloud';
 import { TrackRow } from '@/ui';
 import { C } from '@/theme';
 
@@ -20,7 +20,7 @@ export default function OnlineMusic() {
   const [result, setResult] = useState<SearchResult>({ query: '', tracks: [], status: 'idle', error: null });
   const trimmedQuery = query.trim();
   const activeResult = result.query === trimmedQuery ? result : null;
-  const status: OnlineStatus = trimmedQuery.length < 2 || !youtubeApiConfigured()
+  const status: OnlineStatus = trimmedQuery.length < 2 || !soundCloudApiConfigured()
     ? 'idle'
     : activeResult?.status ?? 'loading';
   const tracks = activeResult?.tracks ?? [];
@@ -28,12 +28,12 @@ export default function OnlineMusic() {
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed.length < 2 || !youtubeApiConfigured()) return;
+    if (trimmed.length < 2 || !soundCloudApiConfigured()) return;
 
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setResult({ query: trimmed, tracks: [], status: 'loading', error: null });
-      void searchYouTube(trimmed, controller.signal)
+      void searchSoundCloud(trimmed, controller.signal)
         .then((results) => {
           if (controller.signal.aborted) return;
           setResult({ query: trimmed, tracks: results, status: 'ready', error: null });
@@ -44,7 +44,7 @@ export default function OnlineMusic() {
             query: trimmed,
             tracks: [],
             status: 'error',
-            error: searchError instanceof Error ? searchError.message : 'Não foi possível pesquisar no YouTube.',
+            error: searchError instanceof Error ? searchError.message : 'Não foi possível pesquisar no SoundCloud.',
           });
         });
     }, 450);
@@ -59,7 +59,7 @@ export default function OnlineMusic() {
     <SafeAreaView edges={['top']} style={s.safe}>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text style={s.title}>Músicas online</Text>
-        <Text style={s.subtitle}>Busque no YouTube e ouça somente o áudio.</Text>
+        <Text style={s.subtitle}>Busque no SoundCloud e ouça as faixas disponíveis.</Text>
         <View style={s.inputWrap}>
           <MaterialCommunityIcons name="magnify" size={20} color={C.muted}/>
           <TextInput
@@ -75,7 +75,7 @@ export default function OnlineMusic() {
           />
         </View>
 
-        {!youtubeApiConfigured() ? (
+        {!soundCloudApiConfigured() ? (
           <Text style={s.message}>Servidor online não configurado.</Text>
         ) : null}
         {status === 'idle' && query.trim().length < 2 ? (
