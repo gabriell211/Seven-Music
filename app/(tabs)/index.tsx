@@ -68,7 +68,7 @@ export default function Home(){
    ):(
     <Pressable onPress={()=>router.push('/playlists')} style={s.emptyCard}>
      <View style={s.emptyIcon}><MaterialCommunityIcons name="playlist-plus" size={24} color={C.purple}/></View>
-     <View style={{flex:1}}><Text style={s.emptyTitle}>Crie sua primeira playlist</Text><Text style={s.emptyText}>Organize músicas locais e do YouTube.</Text></View>
+     <View style={{flex:1}}><Text style={s.emptyTitle}>Crie sua primeira playlist</Text><Text style={s.emptyText}>Organize músicas locais e do SoundCloud.</Text></View>
      <MaterialCommunityIcons name="chevron-right" size={22} color={C.muted}/>
     </Pressable>
    )}
