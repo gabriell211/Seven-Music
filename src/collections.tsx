@@ -31,7 +31,7 @@ const Context = createContext<CollectionsValue | null>(null);
 function cleanTrack(track: Track): Track {
   return {
     ...track,
-    uri: track.source === 'youtube' ? undefined : track.uri,
+    uri: track.source === 'soundcloud' ? undefined : track.uri,
     requestHeaders: undefined,
   };
 }
