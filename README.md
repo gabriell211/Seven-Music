@@ -23,7 +23,7 @@ API de produção: https://seven-music-three.vercel.app
 - URLs temporárias de stream não são persistidas no dispositivo.
 - Capas, artista, duração e link original do SoundCloud preservados.
 - A tela do player oferece acesso à página original da faixa no SoundCloud.
-- Backend FastAPI sem yt-dlp e sem scraping do YouTube.
+- Backend FastAPI usando somente a integração SoundCloud para a fonte online.
 - CI valida Expo, TypeScript e backend Python.
 
 ## Arquitetura
