@@ -53,7 +53,7 @@ class SoundCloudTests(unittest.TestCase):
         assert item is not None
         self.assertEqual(item["access"], "blocked")
 
-    def test_prefers_progressive_mp3_for_mobile_playback(self):
+    def test_prefers_hls_aac_for_current_soundcloud_playback(self):
         selected = main._select_transcoding({
             "media": {
                 "transcodings": [
@@ -75,7 +75,7 @@ class SoundCloudTests(unittest.TestCase):
             }
         })
 
-        self.assertEqual(selected["url"], "https://audio.example/progressive")
+        self.assertEqual(selected["url"], "https://audio.example/hls")
 
     def test_resolve_adds_track_authorization(self):
         track = {
