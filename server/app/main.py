@@ -28,8 +28,9 @@ CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_TTL_SECONDS = 120
 MAX_AUDIO_BYTES = int(os.getenv("SEVEN_MAX_AUDIO_BYTES", str(12 * 1024 * 1024)))
 MAX_SEARCH_DURATION_SECONDS = int(os.getenv("SEVEN_MAX_SEARCH_DURATION_SECONDS", "600"))
-UPSTREAM_FAILURE_THRESHOLD = int(os.getenv("SEVEN_UPSTREAM_FAILURE_THRESHOLD", "2"))
-UPSTREAM_COOLDOWN_SECONDS = int(os.getenv("SEVEN_UPSTREAM_COOLDOWN_SECONDS", "60"))
+UPSTREAM_FAILURE_THRESHOLD = int(os.getenv("SEVEN_UPSTREAM_FAILURE_THRESHOLD", "3"))
+UPSTREAM_COOLDOWN_SECONDS = int(os.getenv("SEVEN_UPSTREAM_COOLDOWN_SECONDS", "15"))
+UPSTREAM_HTTP_RETRIES = int(os.getenv("SEVEN_UPSTREAM_HTTP_RETRIES", "1"))
 
 SAFE_HEADER_NAMES = {
     "accept",
@@ -122,6 +123,16 @@ def _mark_upstream_failure(upstream: str) -> None:
             state.opened_until = now + UPSTREAM_COOLDOWN_SECONDS
 
 
+def _should_trip_circuit(exc: Exception) -> bool:
+    # A 502 from a resolver usually means YouTube rejected that particular
+    # rotating exit IP/video combination. Do not sideline an entire Render
+    # region for a content-specific failure; the next request may get a new IP.
+    if isinstance(exc, urllib.error.HTTPError):
+        if exc.code in {413, 429, 502}:
+            return False
+    return True
+
+
 def _read_http_error_detail(exc: urllib.error.HTTPError) -> str:
     try:
         payload = json.loads(exc.read().decode("utf-8"))
@@ -134,25 +145,46 @@ def _read_http_error_detail(exc: urllib.error.HTTPError) -> str:
 
 
 def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
+    cache_key = "upstream:" + video_id
+    now = time.time()
+    cached = _resolve_cache.get(cache_key)
+    if cached and cached.expires_at > now:
+        return cached.value
+
     upstreams = _healthy_upstreams(_resolver_upstreams())
     if not upstreams:
         raise RuntimeError("upstream disabled")
 
     def request_upstream(upstream: str) -> dict[str, Any]:
-        request = urllib.request.Request(
-            upstream + "/v1/youtube/resolve/" + video_id,
-            headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=35) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            if exc.code == 413:
-                raise AudioTooLargeError(_read_http_error_detail(exc)) from exc
-            raise
-        if not isinstance(payload, dict) or not payload.get("streamUrl"):
-            raise RuntimeError("upstream returned no streamUrl")
-        return payload
+        last_error: Exception | None = None
+        for attempt in range(UPSTREAM_HTTP_RETRIES + 1):
+            request = urllib.request.Request(
+                upstream + "/v1/youtube/resolve/" + video_id,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "Seven-Music/1.0",
+                    "Cache-Control": "no-cache",
+                    "Connection": "close",
+                },
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=35) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                if not isinstance(payload, dict) or not payload.get("streamUrl"):
+                    raise RuntimeError("upstream returned no streamUrl")
+                return payload
+            except urllib.error.HTTPError as exc:
+                if exc.code == 413:
+                    raise AudioTooLargeError(_read_http_error_detail(exc)) from exc
+                last_error = exc
+                # A new request gives the rotating proxy another chance to
+                # select a clean exit IP. Retry only fast, content-level
+                # failures; never double a network timeout.
+                if exc.code in {429, 502} and attempt < UPSTREAM_HTTP_RETRIES:
+                    continue
+                raise
+
+        raise RuntimeError("upstream retry exhausted") from last_error
 
     executor = ThreadPoolExecutor(max_workers=len(upstreams))
     futures = {executor.submit(request_upstream, upstream): upstream for upstream in upstreams}
@@ -164,12 +196,17 @@ def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
             try:
                 payload = future.result()
                 _mark_upstream_success(upstream)
+                _resolve_cache[cache_key] = CacheEntry(
+                    expires_at=time.time() + CACHE_TTL_SECONDS,
+                    value=payload,
+                )
                 return payload
             except AudioTooLargeError as exc:
                 too_large_error = exc
             except Exception as exc:
                 last_error = exc
-                _mark_upstream_failure(upstream)
+                if _should_trip_circuit(exc):
+                    _mark_upstream_failure(upstream)
                 print(
                     "Seven Music upstream candidate failed:",
                     upstream,
@@ -216,7 +253,8 @@ def _search_upstream_sync(query: str, limit: int) -> list[dict[str, Any]]:
                 return items
             except Exception as exc:
                 last_error = exc
-                _mark_upstream_failure(upstream)
+                if _should_trip_circuit(exc):
+                    _mark_upstream_failure(upstream)
                 print(
                     "Seven Music search upstream candidate failed:",
                     upstream,
@@ -522,6 +560,14 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
             "bestaudio[protocol^=http]/bestaudio",
             True,
         ))
+        if os.getenv("YTDLP_PROXY_ROTATE", "").strip().lower() in {"1", "true", "yes", "on"}:
+            # A fresh YoutubeDL instance normally opens a fresh proxy
+            # connection, giving Webshare rotation a second exit-IP chance.
+            strategies.append((
+                ["mweb"],
+                "bestaudio[protocol^=http]/bestaudio",
+                True,
+            ))
 
     if js_runtimes:
         # android_vr currently avoids the GVS PO-token path and is a useful
