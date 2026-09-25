@@ -338,26 +338,61 @@ async def soundcloud_search(
 
 
 @app.get("/v1/soundcloud/resolve/{track_urn:path}")
-async def soundcloud_resolve(track_urn: str) -> dict[str, Any]:
+async def soundcloud_resolve(
+    track_urn: str,
+    url: str | None = Query(default=None, max_length=500),
+) -> dict[str, Any]:
     if not TRACK_URN_RE.fullmatch(track_urn):
         raise HTTPException(status_code=422, detail="URN de faixa inválido.")
 
+    if url and not url.startswith(("https://soundcloud.com/", "http://soundcloud.com/")):
+        raise HTTPException(status_code=422, detail="URL do SoundCloud inválida.")
+
     track_id = _numeric_track_id(track_urn)
+
     try:
-        track = await asyncio.to_thread(
-            _soundcloud_request,
-            f"/tracks/{track_id}",
-        )
+        track: Any = None
+
+        if url:
+            track = await asyncio.to_thread(
+                _soundcloud_request,
+                "/resolve",
+                {"url": url},
+            )
+
+        if not isinstance(track, dict):
+            try:
+                track = await asyncio.to_thread(
+                    _soundcloud_request,
+                    f"/tracks/{track_id}",
+                )
+            except SoundCloudApiError as exc:
+                if exc.status_code != 404:
+                    raise
+
+                hydrated = await asyncio.to_thread(
+                    _soundcloud_request,
+                    "/tracks",
+                    {"ids": track_id},
+                )
+                if isinstance(hydrated, list) and hydrated:
+                    track = hydrated[0]
+                elif isinstance(hydrated, dict):
+                    collection = hydrated.get("collection")
+                    track = collection[0] if isinstance(collection, list) and collection else None
+
         if not isinstance(track, dict):
             raise SoundCloudApiError(
-                502,
-                "O SoundCloud retornou metadados de faixa inválidos.",
+                404,
+                "Faixa não encontrada no SoundCloud.",
             )
+
         if not _has_full_stream(track):
             raise SoundCloudApiError(
                 409,
                 "Esta faixa não está disponível para reprodução completa.",
             )
+
         stream_url, stream_format = await asyncio.to_thread(
             _resolve_transcoding,
             track,
