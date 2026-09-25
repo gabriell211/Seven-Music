@@ -202,7 +202,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         }
 
         try {
-          const resolved = await resolveSoundCloudStream(nextTrack.soundcloudUrn, nextTrack.permalinkUrl);
+          const resolved = await resolveSoundCloudStream(nextTrack.soundcloudUrn, { permalinkUrl: nextTrack.permalinkUrl, transcodingUrl: nextTrack.soundcloudTranscodingUrl, trackAuthorization: nextTrack.soundcloudTrackAuthorization });
           const playable = {
             ...cleanTrack,
             uri: resolved.streamUrl,
@@ -221,7 +221,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
               if (!neighbor?.soundcloudUrn) return null;
 
               try {
-                const neighborResolved = await resolveSoundCloudStream(neighbor.soundcloudUrn, neighbor.permalinkUrl);
+                const neighborResolved = await resolveSoundCloudStream(neighbor.soundcloudUrn, { permalinkUrl: neighbor.permalinkUrl, transcodingUrl: neighbor.soundcloudTranscodingUrl, trackAuthorization: neighbor.soundcloudTrackAuthorization });
                 return {
                   ...cleanQueueTrack(neighbor),
                   uri: neighborResolved.streamUrl,
