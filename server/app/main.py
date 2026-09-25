@@ -75,13 +75,13 @@ def _soundcloud_request(
         ),
     }
 
-    if authenticated:
-        token = _access_token()
-        if not token:
-            raise SoundCloudApiError(
-                503,
-                "SOUNDCLOUD_ACCESS_TOKEN não está configurado no servidor.",
-            )
+    token = _access_token()
+    if authenticated and not token:
+        raise SoundCloudApiError(
+            503,
+            "SOUNDCLOUD_ACCESS_TOKEN não está configurado no servidor.",
+        )
+    if token:
         headers["Authorization"] = f"OAuth {token}"
 
     request = urllib.request.Request(url, headers=headers)
