@@ -227,11 +227,12 @@ def _stream_score(transcoding: dict[str, Any]) -> tuple[int, int, int]:
     preset = str(transcoding.get("preset") or "").lower()
     quality = str(transcoding.get("quality") or "").lower()
 
-    # Prefer a direct MP3 URL for native mobile playback when available.
-    protocol_score = 4 if protocol == "progressive" else 3 if protocol == "hls" else 0
+    # Current SoundCloud playback primarily uses HLS/AAC. Keep progressive
+    # MP3 as a compatibility fallback for tracks that still expose it.
+    protocol_score = 4 if protocol == "hls" else 3 if protocol == "progressive" else 0
     codec_score = (
-        4 if "audio/mpeg" in mime_type
-        else 3 if "audio/mp4" in mime_type or "aac" in preset
+        4 if "audio/mp4" in mime_type or "aac" in preset
+        else 3 if "audio/mpeg" in mime_type
         else 2 if "opus" in mime_type or "opus" in preset
         else 1
     )
