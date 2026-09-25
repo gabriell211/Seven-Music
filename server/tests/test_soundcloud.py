@@ -1,19 +1,30 @@
 import unittest
+from unittest.mock import patch
 
 from app import main
 
 
 class SoundCloudTests(unittest.TestCase):
-    def test_normalizes_track(self):
+    def test_normalizes_playable_track(self):
         item = main._normalize_track({
             "id": 123,
             "title": "Seven",
-            "duration": 185400,
-            "access": "playable",
+            "full_duration": 185400,
+            "streamable": True,
+            "policy": "ALLOW",
             "permalink_url": "https://soundcloud.com/example/seven",
             "artwork_url": "https://i1.sndcdn.com/artworks-test-large.jpg",
             "user": {"username": "Gabriel"},
             "publisher_metadata": {"artist": "Seven Artist"},
+            "media": {
+                "transcodings": [{
+                    "url": "https://api-v2.soundcloud.com/media/test/stream/progressive",
+                    "snipped": False,
+                    "preset": "mp3_1_0",
+                    "format": {"protocol": "progressive", "mime_type": "audio/mpeg"},
+                    "quality": "sq",
+                }]
+            },
         })
 
         self.assertIsNotNone(item)
@@ -21,27 +32,78 @@ class SoundCloudTests(unittest.TestCase):
         self.assertEqual(item["trackUrn"], "soundcloud:tracks:123")
         self.assertEqual(item["artist"], "Seven Artist")
         self.assertEqual(item["durationSeconds"], 185)
+        self.assertEqual(item["access"], "playable")
 
-    def test_prefers_aac_160_stream(self):
-        url, stream_format = main._select_stream({
-            "hls_aac_96_url": "https://audio.example/96.m3u8",
-            "hls_aac_160_url": "https://audio.example/160.m3u8",
+    def test_blocks_snipped_only_track(self):
+        item = main._normalize_track({
+            "id": 123,
+            "title": "Preview only",
+            "duration": 30000,
+            "streamable": True,
+            "user": {"username": "Gabriel"},
+            "media": {
+                "transcodings": [{
+                    "url": "https://api-v2.soundcloud.com/media/test/stream/progressive",
+                    "snipped": True,
+                    "format": {"protocol": "progressive", "mime_type": "audio/mpeg"},
+                }]
+            },
         })
 
-        self.assertEqual(url, "https://audio.example/160.m3u8")
-        self.assertEqual(stream_format, "hls-aac-160")
+        assert item is not None
+        self.assertEqual(item["access"], "blocked")
 
-    def test_falls_back_to_aac_96_stream(self):
-        url, stream_format = main._select_stream({
-            "hls_aac_96_url": "https://audio.example/96.m3u8",
+    def test_prefers_progressive_mp3_for_mobile_playback(self):
+        selected = main._select_transcoding({
+            "media": {
+                "transcodings": [
+                    {
+                        "url": "https://audio.example/hls",
+                        "snipped": False,
+                        "preset": "aac_1_0",
+                        "format": {"protocol": "hls", "mime_type": "audio/mp4"},
+                        "quality": "hq",
+                    },
+                    {
+                        "url": "https://audio.example/progressive",
+                        "snipped": False,
+                        "preset": "mp3_1_0",
+                        "format": {"protocol": "progressive", "mime_type": "audio/mpeg"},
+                        "quality": "sq",
+                    },
+                ]
+            }
         })
 
-        self.assertEqual(url, "https://audio.example/96.m3u8")
-        self.assertEqual(stream_format, "hls-aac-96")
+        self.assertEqual(selected["url"], "https://audio.example/progressive")
 
-    def test_rejects_missing_full_stream(self):
-        with self.assertRaises(main.SoundCloudApiError):
-            main._select_stream({"preview_mp3_128_url": "https://audio.example/preview.mp3"})
+    def test_resolve_adds_track_authorization(self):
+        track = {
+            "track_authorization": "track-jwt",
+            "media": {
+                "transcodings": [{
+                    "url": "https://api-v2.soundcloud.com/media/test/stream/progressive",
+                    "snipped": False,
+                    "preset": "mp3_1_0",
+                    "format": {"protocol": "progressive", "mime_type": "audio/mpeg"},
+                    "quality": "sq",
+                }]
+            },
+        }
+
+        with patch.object(
+            main,
+            "_soundcloud_request",
+            return_value={"url": "https://cf-media.sndcdn.com/audio.mp3"},
+        ) as request:
+            stream_url, stream_format = main._resolve_transcoding(track)
+
+        self.assertEqual(stream_url, "https://cf-media.sndcdn.com/audio.mp3")
+        self.assertEqual(stream_format, "progressive-mp3_1_0")
+        request.assert_called_once_with(
+            "https://api-v2.soundcloud.com/media/test/stream/progressive",
+            {"track_authorization": "track-jwt"},
+        )
 
 
 if __name__ == "__main__":
