@@ -143,7 +143,7 @@ def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
             headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(request, timeout=35) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code == 413:
@@ -196,7 +196,7 @@ def _search_upstream_sync(query: str, limit: int) -> list[dict[str, Any]]:
             upstream + "/v1/youtube/search?" + query_string,
             headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
         )
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=25) as response:
             payload = json.loads(response.read().decode("utf-8"))
         items = payload.get("items") if isinstance(payload, dict) else None
         if not isinstance(items, list):
@@ -284,10 +284,10 @@ def _base_ydl_options() -> dict[str, Any]:
         "extractor_args": _extractor_args(),
         "js_runtimes": _available_js_runtimes(),
         "remote_components": ["ejs:github"],
-        "socket_timeout": 15,
-        "retries": 3,
-        "extractor_retries": 3,
-        "fragment_retries": 3,
+        "socket_timeout": 12,
+        "retries": 1,
+        "extractor_retries": 1,
+        "fragment_retries": 1,
     }
 
     cookie_file = _cookies_file()
@@ -478,28 +478,35 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
 
     strategies: list[tuple[list[str], str]] = []
 
-    if js_runtimes:
-        # The visionOS client can expose a direct audio stream without the
-        # PO-token path used by mweb. Keep the audio-only selector.
-        strategies.append((
-            ["visionos"],
-            "bestaudio[protocol^=http]/bestaudio",
-        ))
-
     if provider_url or script_home:
+        # Current yt-dlp guidance recommends mweb + a PO Token provider.
+        # Try it first so we do not spend the Vercel timeout budget on a
+        # datacenter-blocked client before POT generation even starts.
         strategies.append((
-            ["mweb", "web", "web_embedded"],
+            ["mweb"],
             "bestaudio[protocol^=http]/bestaudio",
         ))
 
     if js_runtimes:
+        # android_vr currently avoids the GVS PO-token path and is a useful
+        # no-cookie fallback for ordinary music videos.
         strategies.append((
-            ["web_safari", "web", "web_embedded"],
+            ["android_vr"],
+            "bestaudio[protocol^=http]/bestaudio",
+        ))
+        # web_safari HLS can remain playable when direct GVS URLs are guarded.
+        strategies.append((
+            ["web_safari"],
             "bestaudio[protocol^=m3u8]/bestaudio[protocol^=http]/bestaudio",
         ))
+        # Embedded is limited to embeddable videos but is cheap to try.
+        strategies.append((
+            ["web_embedded"],
+            "bestaudio[protocol^=http]/bestaudio",
+        ))
     else:
-        # Vercel's Python runtime currently has no JS engine. Prefer HLS from
-        # clients whose GVS playback does not require a PO token where possible.
+        # Vercel should normally delegate to Render. Keep lightweight local
+        # fallbacks for development or a temporary upstream outage.
         strategies.extend([
             (
                 ["web_safari"],
@@ -510,7 +517,7 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
                 "bestaudio[protocol^=http]/bestaudio",
             ),
             (
-                ["tv"],
+                ["android_vr"],
                 "bestaudio[protocol^=http]/bestaudio",
             ),
         ])
