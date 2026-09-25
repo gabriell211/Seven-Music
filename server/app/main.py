@@ -44,6 +44,7 @@ app = FastAPI(title="Seven Music API", version="0.1.0", docs_url="/docs", redoc_
 print(
     "Seven Music resolver configuration:",
     "proxy=" + str(bool(os.getenv("YTDLP_PROXY"))),
+    "proxy_rotate=" + str(os.getenv("YTDLP_PROXY_ROTATE", "").strip().lower() in {"1", "true", "yes", "on"}),
     "cookies=" + str(bool(os.getenv("YTDLP_COOKIES_FILE") or os.getenv("YTDLP_COOKIES_B64"))),
     "pot_provider=" + str(bool(os.getenv("YTDLP_POT_PROVIDER_URL") or os.getenv("YTDLP_POT_SCRIPT_HOME"))),
     file=sys.stderr,
@@ -278,6 +279,39 @@ def _cookies_file() -> str:
         return ""
 
 
+def _effective_proxy() -> str:
+    proxy = os.getenv("YTDLP_PROXY", "").strip()
+    if not proxy:
+        return ""
+
+    rotate = os.getenv("YTDLP_PROXY_ROTATE", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not rotate:
+        return proxy
+
+    try:
+        parsed = urllib.parse.urlsplit(proxy)
+        username = urllib.parse.unquote(parsed.username or "")
+        password = urllib.parse.unquote(parsed.password or "")
+        if not username or not password:
+            return proxy
+
+        if not username.endswith("-rotate"):
+            username += "-rotate"
+
+        encoded_user = urllib.parse.quote(username, safe="-._~")
+        encoded_password = urllib.parse.quote(password, safe="-._~")
+        scheme = parsed.scheme or "http"
+        return f"{scheme}://{encoded_user}:{encoded_password}@p.webshare.io:80/"
+    except Exception as exc:
+        print(
+            "Seven Music rotating proxy setup failed:",
+            type(exc).__name__,
+            str(exc),
+            file=sys.stderr,
+        )
+        return proxy
+
+
 def _base_ydl_options() -> dict[str, Any]:
     options: dict[str, Any] = {
         "quiet": True,
@@ -296,7 +330,7 @@ def _base_ydl_options() -> dict[str, Any]:
     if cookie_file:
         options["cookiefile"] = cookie_file
 
-    proxy = os.getenv("YTDLP_PROXY", "").strip()
+    proxy = _effective_proxy()
     if proxy:
         options["proxy"] = proxy
 
