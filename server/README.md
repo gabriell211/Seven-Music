@@ -21,8 +21,7 @@ SoundCloud, então os endpoints podem mudar sem aviso.
     SOUNDCLOUD_ACCESS_TOKEN=...
 
 `SOUNDCLOUD_CLIENT_ID` é obrigatório para busca e playback públicos.
-`SOUNDCLOUD_ACCESS_TOKEN` é opcional e usado apenas em rotas autenticadas como
-`/v1/soundcloud/me`.
+`SOUNDCLOUD_ACCESS_TOKEN` é opcional para chamadas internas que aceitam a sessão autenticada. Ele nunca é exposto pelo backend.
 
 ## Subir
 
@@ -41,5 +40,4 @@ Resolver stream:
 
     curl "http://localhost:8787/v1/soundcloud/resolve/soundcloud:tracks:TRACK_ID"
 
-O resolver prefere MP3 progressive para compatibilidade com o player mobile e
-faz fallback para outros transcodings completos disponíveis.
+O resolver prefere HLS/AAC, caminho principal atual do SoundCloud, e mantém transcodings completos alternativos como fallback.
