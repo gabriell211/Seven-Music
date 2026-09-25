@@ -51,6 +51,7 @@ def _soundcloud_request(
     params: dict[str, str | int] | None = None,
     *,
     authenticated: bool = False,
+    send_access_token: bool = True,
 ) -> Any:
     query_params: dict[str, str | int] = {"client_id": _client_id()}
     if params:
@@ -81,7 +82,7 @@ def _soundcloud_request(
             503,
             "SOUNDCLOUD_ACCESS_TOKEN não está configurado no servidor.",
         )
-    if token:
+    if token and send_access_token:
         headers["Authorization"] = f"OAuth {token}"
 
     request = urllib.request.Request(url, headers=headers)
@@ -267,7 +268,11 @@ def _resolve_transcoding(track: dict[str, Any]) -> tuple[str, str]:
     if isinstance(track_authorization, str) and track_authorization:
         params["track_authorization"] = track_authorization
 
-    payload = _soundcloud_request(transcoding_url, params)
+    payload = _soundcloud_request(
+        transcoding_url,
+        params,
+        send_access_token=False,
+    )
     if not isinstance(payload, dict) or not isinstance(payload.get("url"), str):
         raise SoundCloudApiError(
             502,
@@ -389,6 +394,7 @@ async def soundcloud_resolve(
                 _soundcloud_request,
                 transcoding_url,
                 params,
+                send_access_token=False,
             )
             if not isinstance(payload, dict) or not isinstance(payload.get("url"), str):
                 raise SoundCloudApiError(
