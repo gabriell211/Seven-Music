@@ -317,23 +317,6 @@ async def soundcloud_status() -> dict[str, Any]:
     }
 
 
-@app.get("/v1/soundcloud/me")
-async def soundcloud_me() -> dict[str, Any]:
-    try:
-        payload = await asyncio.to_thread(
-            _soundcloud_request,
-            "/me",
-            None,
-            authenticated=True,
-        )
-    except SoundCloudApiError as exc:
-        _raise_http(exc)
-
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=502, detail="Resposta de usuário inválida.")
-    return payload
-
-
 @app.get("/v1/soundcloud/search")
 async def soundcloud_search(
     q: str = Query(min_length=2, max_length=120),
