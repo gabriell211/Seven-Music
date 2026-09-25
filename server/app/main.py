@@ -181,6 +181,24 @@ def _normalize_track(track: dict[str, Any]) -> dict[str, Any] | None:
 
     artwork = track.get("artwork_url") or user.get("avatar_url")
 
+    access = "playable" if _has_full_stream(track) else "blocked"
+    transcoding_url: str | None = None
+    transcoding_format: str | None = None
+    if access == "playable":
+        try:
+            transcoding = _select_transcoding(track)
+            transcoding_url = str(transcoding.get("url") or "") or None
+            fmt = transcoding.get("format")
+            protocol = str(fmt.get("protocol") or "") if isinstance(fmt, dict) else ""
+            preset = str(transcoding.get("preset") or "")
+            transcoding_format = "-".join(
+                part for part in (protocol, preset) if part
+            ) or None
+        except SoundCloudApiError:
+            access = "blocked"
+
+    track_authorization = track.get("track_authorization") or track.get("track_auth")
+
     return {
         "trackUrn": urn,
         "title": title,
@@ -188,7 +206,14 @@ def _normalize_track(track: dict[str, Any]) -> dict[str, Any] | None:
         "durationSeconds": duration_seconds,
         "thumbnail": str(artwork) if artwork else None,
         "permalinkUrl": str(track.get("permalink_url") or "") or None,
-        "access": "playable" if _has_full_stream(track) else "blocked",
+        "access": access,
+        "transcodingUrl": transcoding_url,
+        "transcodingFormat": transcoding_format,
+        "trackAuthorization": (
+            str(track_authorization)
+            if isinstance(track_authorization, str) and track_authorization
+            else None
+        ),
     }
 
 
@@ -340,10 +365,44 @@ async def soundcloud_search(
 @app.get("/v1/soundcloud/resolve/{track_urn:path}")
 async def soundcloud_resolve(
     track_urn: str,
+    transcoding_url: str | None = Query(default=None, max_length=1000),
+    track_authorization: str | None = Query(default=None, max_length=2000),
     url: str | None = Query(default=None, max_length=500),
 ) -> dict[str, Any]:
     if not TRACK_URN_RE.fullmatch(track_urn):
         raise HTTPException(status_code=422, detail="URN de faixa inválido.")
+
+    if transcoding_url:
+        parsed = urllib.parse.urlparse(transcoding_url)
+        if parsed.scheme != "https" or parsed.hostname != "api-v2.soundcloud.com":
+            raise HTTPException(status_code=422, detail="URL de transcoding inválida.")
+        if "/media/" not in parsed.path or "/stream/" not in parsed.path:
+            raise HTTPException(status_code=422, detail="URL de transcoding inválida.")
+
+        params: dict[str, str] = {}
+        if track_authorization:
+            params["track_authorization"] = track_authorization
+
+        try:
+            payload = await asyncio.to_thread(
+                _soundcloud_request,
+                transcoding_url,
+                params,
+            )
+            if not isinstance(payload, dict) or not isinstance(payload.get("url"), str):
+                raise SoundCloudApiError(
+                    502,
+                    "O SoundCloud retornou uma URL de áudio inválida.",
+                )
+        except SoundCloudApiError as exc:
+            _raise_http(exc)
+
+        return {
+            "trackUrn": track_urn,
+            "streamUrl": str(payload["url"]),
+            "streamHeaders": {},
+            "format": "soundcloud-transcoding",
+        }
 
     if url and not url.startswith(("https://soundcloud.com/", "http://soundcloud.com/")):
         raise HTTPException(status_code=422, detail="URL do SoundCloud inválida.")
@@ -354,11 +413,15 @@ async def soundcloud_resolve(
         track: Any = None
 
         if url:
-            track = await asyncio.to_thread(
-                _soundcloud_request,
-                "/resolve",
-                {"url": url},
-            )
+            try:
+                track = await asyncio.to_thread(
+                    _soundcloud_request,
+                    "/resolve",
+                    {"url": url},
+                )
+            except SoundCloudApiError as exc:
+                if exc.status_code not in (404,):
+                    raise
 
         if not isinstance(track, dict):
             try:
