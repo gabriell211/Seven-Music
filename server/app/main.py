@@ -16,6 +16,7 @@ import traceback
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
@@ -23,9 +24,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
+from .providers import CallableYouTubeProvider, ProviderChainError, YouTubeProviderChain
+
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_TTL_SECONDS = 120
+STREAM_EXPIRY_SAFETY_SECONDS = int(os.getenv("SEVEN_STREAM_EXPIRY_SAFETY_SECONDS", "45"))
 MAX_AUDIO_BYTES = int(os.getenv("SEVEN_MAX_AUDIO_BYTES", str(12 * 1024 * 1024)))
 MAX_SEARCH_DURATION_SECONDS = int(os.getenv("SEVEN_MAX_SEARCH_DURATION_SECONDS", "600"))
 UPSTREAM_FAILURE_THRESHOLD = int(os.getenv("SEVEN_UPSTREAM_FAILURE_THRESHOLD", "3"))
@@ -74,6 +78,47 @@ class UpstreamHealth:
 
 class AudioTooLargeError(RuntimeError):
     pass
+
+
+def _stream_expiry_timestamp(stream_url: str) -> float | None:
+    """Extract a signed-media expiry timestamp without depending on one CDN shape."""
+    if not stream_url:
+        return None
+
+    try:
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(stream_url).query)
+        for key in ("expire", "expires", "exp"):
+            raw = (query.get(key) or [None])[0]
+            if raw is None:
+                continue
+
+            value = float(raw)
+            # Some providers use milliseconds while googlevideo normally uses seconds.
+            if value > 10_000_000_000:
+                value /= 1000
+
+            if value > time.time():
+                return value
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+    return None
+
+
+def _expiry_iso(timestamp: float | None) -> str | None:
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _cache_deadline(now: float, stream_expiry: float | None) -> float:
+    deadline = now + CACHE_TTL_SECONDS
+    if stream_expiry is not None:
+        deadline = min(
+            deadline,
+            max(now, stream_expiry - STREAM_EXPIRY_SAFETY_SECONDS),
+        )
+    return deadline
 
 
 _resolve_cache: dict[str, CacheEntry] = {}
@@ -196,8 +241,18 @@ def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
             try:
                 payload = future.result()
                 _mark_upstream_success(upstream)
+
+                payload = dict(payload)
+                stream_expiry = _stream_expiry_timestamp(
+                    str(payload.get("streamUrl") or "")
+                )
+                if stream_expiry is not None:
+                    payload["expiresAt"] = _expiry_iso(stream_expiry)
+                payload.setdefault("provider", "upstream")
+
+                cache_now = time.time()
                 _resolve_cache[cache_key] = CacheEntry(
-                    expires_at=time.time() + CACHE_TTL_SECONDS,
+                    expires_at=_cache_deadline(cache_now, stream_expiry),
                     value=payload,
                 )
                 return payload
@@ -631,16 +686,19 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
             if not stream_url:
                 continue
 
+            stream_expiry = _stream_expiry_timestamp(stream_url)
             value = {
                 "videoId": video_id,
                 "streamUrl": stream_url,
                 "streamHeaders": stream_headers,
-                "expiresAt": None,
+                "expiresAt": _expiry_iso(stream_expiry),
+                "provider": "yt-dlp",
                 "strategy": clients[0],
                 "sizeBytes": size_bytes,
             }
+            cache_now = time.time()
             _resolve_cache[video_id] = CacheEntry(
-                expires_at=now + CACHE_TTL_SECONDS,
+                expires_at=_cache_deadline(cache_now, stream_expiry),
                 value=value,
             )
             return value
@@ -662,12 +720,65 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
     raise DownloadError("Nenhum formato de áudio reproduzível foi encontrado.")
 
 
+
+def _youtube_search_chain() -> YouTubeProviderChain:
+    providers: list[CallableYouTubeProvider] = []
+    if _resolver_upstreams():
+        providers.append(
+            CallableYouTubeProvider(
+                name="upstream",
+                search_fn=_search_upstream_sync,
+                resolve_fn=_resolve_upstream_sync,
+            )
+        )
+
+    providers.append(
+        CallableYouTubeProvider(
+            name="yt-dlp",
+            search_fn=_search_sync,
+            resolve_fn=_resolve_sync,
+        )
+    )
+    return YouTubeProviderChain(providers)
+
+
+def _youtube_resolve_chain() -> YouTubeProviderChain:
+    upstreams = _resolver_upstreams()
+    providers: list[CallableYouTubeProvider] = []
+
+    if upstreams:
+        providers.append(
+            CallableYouTubeProvider(
+                name="upstream",
+                search_fn=_search_upstream_sync,
+                resolve_fn=_resolve_upstream_sync,
+            )
+        )
+
+    # The Vercel edge delegates resolution to the long-running resolver
+    # services. Running yt-dlp locally there is intentionally avoided because
+    # extraction can exceed the serverless timeout budget.
+    if not upstreams or not os.getenv("VERCEL"):
+        providers.append(
+            CallableYouTubeProvider(
+                name="yt-dlp",
+                search_fn=_search_sync,
+                resolve_fn=_resolve_sync,
+            )
+        )
+
+    return YouTubeProviderChain(
+        providers,
+        fatal_exceptions=(AudioTooLargeError,),
+    )
+
+
 @app.get("/")
 async def root() -> dict[str, str]:
     return {
         "name": "Seven Music API",
         "status": "online",
-        "version": "0.2.6",
+        "version": "0.2.7",
     }
 
 
@@ -676,38 +787,51 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/v1/youtube/providers")
+async def youtube_providers() -> dict[str, list[str]]:
+    return {
+        "search": list(_youtube_search_chain().provider_names),
+        "resolve": list(_youtube_resolve_chain().provider_names),
+    }
+
+
 @app.get("/v1/youtube/search")
 async def youtube_search(
     q: str = Query(min_length=2, max_length=120),
     limit: int = Query(default=12, ge=1, le=20),
 ) -> dict[str, list[dict[str, Any]]]:
-    try:
-        query = q.strip()
-        if _resolver_upstreams():
-            try:
-                items = await asyncio.to_thread(_search_upstream_sync, query, limit)
-                return {"items": items}
-            except Exception as upstream_exc:
-                print(
-                    "Seven Music search upstream resolver failed:",
-                    type(upstream_exc).__name__,
-                    str(upstream_exc),
-                    file=sys.stderr,
-                )
+    query = q.strip()
 
-        items = await asyncio.to_thread(_search_sync, query, limit)
-        return {"items": items}
-    except DownloadError as exc:
+    try:
+        result = await asyncio.to_thread(
+            _youtube_search_chain().search,
+            query,
+            limit,
+        )
+        return {"items": result.value}
+    except ProviderChainError as exc:
+        cause = exc.last_error
+        print(
+            "Seven Music search providers exhausted:",
+            exc.summary(),
+            file=sys.stderr,
+        )
+        if isinstance(cause, DownloadError):
+            raise HTTPException(
+                status_code=502,
+                detail="O YouTube recusou a pesquisa no momento.",
+            ) from cause
+
         raise HTTPException(
             status_code=502,
-            detail="O YouTube recusou a pesquisa no momento.",
-        ) from exc
+            detail="Falha ao pesquisar músicas no momento.",
+        ) from cause
     except Exception as exc:
         print("Seven Music search error:", type(exc).__name__, str(exc), file=sys.stderr)
         traceback.print_exc()
         raise HTTPException(
             status_code=502,
-            detail="Falha interna do yt-dlp: " + type(exc).__name__,
+            detail="Falha ao pesquisar músicas no momento.",
         ) from exc
 
 
@@ -717,29 +841,33 @@ async def youtube_resolve(video_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="ID de vídeo inválido.")
 
     try:
-        if _resolver_upstreams():
-            try:
-                return await asyncio.to_thread(_resolve_upstream_sync, video_id)
-            except AudioTooLargeError:
-                raise
-            except Exception as upstream_exc:
-                print(
-                    "Seven Music upstream resolver failed:",
-                    type(upstream_exc).__name__,
-                    str(upstream_exc),
-                    file=sys.stderr,
-                )
-                if os.getenv("VERCEL"):
-                    raise HTTPException(
-                        status_code=502,
-                        detail="O serviço de áudio online está indisponível no momento.",
-                    ) from upstream_exc
-
-        return await asyncio.to_thread(_resolve_sync, video_id)
-    except HTTPException:
-        raise
+        result = await asyncio.to_thread(
+            _youtube_resolve_chain().resolve,
+            video_id,
+        )
+        payload = dict(result.value)
+        payload.setdefault("provider", result.provider)
+        return payload
     except AudioTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except ProviderChainError as exc:
+        cause = exc.last_error
+        print(
+            "Seven Music resolve providers exhausted:",
+            exc.summary(),
+            file=sys.stderr,
+        )
+
+        if os.getenv("VERCEL") and _resolver_upstreams():
+            raise HTTPException(
+                status_code=502,
+                detail="O serviço de áudio online está indisponível no momento.",
+            ) from cause
+
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível obter um stream de áudio para este vídeo.",
+        ) from cause
     except DownloadError as exc:
         raise HTTPException(
             status_code=502,
