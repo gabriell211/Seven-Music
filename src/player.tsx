@@ -20,7 +20,7 @@ import {
   setPlaybackQueue,
   subscribePlaybackStatus,
 } from './services/audio';
-import { resolveYouTubeStream } from './services/youtube';
+import { resolveSoundCloudStream } from './services/soundcloud';
 import {
   loadCurrentTrackId,
   loadFavorites,
@@ -77,7 +77,7 @@ const EMPTY_TRACK: Track = {
 function cleanQueueTrack(track: Track): Track {
   return {
     ...track,
-    uri: track.source === 'youtube' ? undefined : track.uri,
+    uri: track.source === 'soundcloud' ? undefined : track.uri,
     requestHeaders: undefined,
   };
 }
@@ -196,13 +196,13 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     };
 
     try {
-      if (nextTrack.source === 'youtube') {
-        if (!nextTrack.youtubeId) {
-          throw new Error('Este resultado do YouTube não possui um ID válido.');
+      if (nextTrack.source === 'soundcloud') {
+        if (!nextTrack.soundcloudUrn) {
+          throw new Error('Este resultado do SoundCloud não possui uma URN válida.');
         }
 
         try {
-          const resolved = await resolveYouTubeStream(nextTrack.youtubeId);
+          const resolved = await resolveSoundCloudStream(nextTrack.soundcloudUrn);
           const playable = {
             ...cleanTrack,
             uri: resolved.streamUrl,
@@ -218,10 +218,10 @@ export function PlayerProvider({ children }: PropsWithChildren) {
               .filter((index) => index >= 0 && index < sourceQueue.length);
             const resolvedNeighbors = await Promise.all(neighborIndexes.map(async (index) => {
               const neighbor = sourceQueue[index];
-              if (!neighbor?.youtubeId) return null;
+              if (!neighbor?.soundcloudUrn) return null;
 
               try {
-                const neighborResolved = await resolveYouTubeStream(neighbor.youtubeId);
+                const neighborResolved = await resolveSoundCloudStream(neighbor.soundcloudUrn);
                 return {
                   ...cleanQueueTrack(neighbor),
                   uri: neighborResolved.streamUrl,
@@ -357,7 +357,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       const activeTrack = queue.find((item) => item.id === status.activeTrackId);
       if (activeTrack) {
         setTrack(
-          activeTrack.source === 'youtube' && status.activeTrackUri
+          activeTrack.source === 'soundcloud' && status.activeTrackUri
             ? {
                 ...activeTrack,
                 uri: status.activeTrackUri,
