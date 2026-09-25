@@ -106,8 +106,8 @@ jobs:
           ### Destaques
           - Player local Android/iOS
           - Páginas separadas para músicas locais e online
-          - Busca local no aparelho e busca online no YouTube
-          - Reprodução online exclusivamente em áudio via resolver yt-dlp
+          - Busca local no aparelho e busca online no SoundCloud
+          - Reprodução online em AAC/HLS via SoundCloud
           - Links "Ver tudo" da Home abrem histórico, músicas locais e playlists
           - Mini-player, fila, favoritos, shuffle e repeat
           - Equalizador Android com bandas ajustáveis e predefinições
