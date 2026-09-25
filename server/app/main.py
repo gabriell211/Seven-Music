@@ -5,9 +5,12 @@ import base64
 import json
 import os
 import re
+import urllib.error
+import urllib.parse
 import urllib.request
 import shutil
 import sys
+import threading
 import time
 import traceback
 
@@ -22,6 +25,11 @@ from yt_dlp.utils import DownloadError
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 CACHE_TTL_SECONDS = 300
+SEARCH_CACHE_TTL_SECONDS = 120
+MAX_AUDIO_BYTES = int(os.getenv("SEVEN_MAX_AUDIO_BYTES", str(12 * 1024 * 1024)))
+MAX_SEARCH_DURATION_SECONDS = int(os.getenv("SEVEN_MAX_SEARCH_DURATION_SECONDS", "600"))
+UPSTREAM_FAILURE_THRESHOLD = int(os.getenv("SEVEN_UPSTREAM_FAILURE_THRESHOLD", "2"))
+UPSTREAM_COOLDOWN_SECONDS = int(os.getenv("SEVEN_UPSTREAM_COOLDOWN_SECONDS", "60"))
 
 SAFE_HEADER_NAMES = {
     "accept",
@@ -53,10 +61,23 @@ app.add_middleware(
 @dataclass(slots=True)
 class CacheEntry:
     expires_at: float
-    value: dict[str, Any]
+    value: Any
+
+
+@dataclass(slots=True)
+class UpstreamHealth:
+    failures: int = 0
+    opened_until: float = 0.0
+
+
+class AudioTooLargeError(RuntimeError):
+    pass
 
 
 _resolve_cache: dict[str, CacheEntry] = {}
+_search_cache: dict[str, CacheEntry] = {}
+_upstream_health: dict[str, UpstreamHealth] = {}
+_upstream_health_lock = threading.Lock()
 
 
 def _resolver_upstreams() -> list[str]:
@@ -72,8 +93,47 @@ def _resolver_upstreams() -> list[str]:
     return []
 
 
+def _healthy_upstreams(upstreams: list[str]) -> list[str]:
+    now = time.monotonic()
+    with _upstream_health_lock:
+        healthy = [
+            upstream
+            for upstream in upstreams
+            if _upstream_health.get(upstream, UpstreamHealth()).opened_until <= now
+        ]
+    # Never hard-lock the whole service. If every circuit is open, probe all
+    # candidates again and let the first recovered region win.
+    return healthy or upstreams
+
+
+def _mark_upstream_success(upstream: str) -> None:
+    with _upstream_health_lock:
+        _upstream_health[upstream] = UpstreamHealth()
+
+
+def _mark_upstream_failure(upstream: str) -> None:
+    now = time.monotonic()
+    with _upstream_health_lock:
+        state = _upstream_health.setdefault(upstream, UpstreamHealth())
+        state.failures += 1
+        if state.failures >= UPSTREAM_FAILURE_THRESHOLD:
+            state.failures = 0
+            state.opened_until = now + UPSTREAM_COOLDOWN_SECONDS
+
+
+def _read_http_error_detail(exc: urllib.error.HTTPError) -> str:
+    try:
+        payload = json.loads(exc.read().decode("utf-8"))
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if detail:
+            return str(detail)
+    except Exception:
+        pass
+    return "A faixa excede o limite permitido pelo Seven Music."
+
+
 def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
-    upstreams = _resolver_upstreams()
+    upstreams = _healthy_upstreams(_resolver_upstreams())
     if not upstreams:
         raise RuntimeError("upstream disabled")
 
@@ -82,8 +142,13 @@ def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
             upstream + "/v1/youtube/resolve/" + video_id,
             headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
         )
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 413:
+                raise AudioTooLargeError(_read_http_error_detail(exc)) from exc
+            raise
         if not isinstance(payload, dict) or not payload.get("streamUrl"):
             raise RuntimeError("upstream returned no streamUrl")
         return payload
@@ -91,13 +156,19 @@ def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
     executor = ThreadPoolExecutor(max_workers=len(upstreams))
     futures = {executor.submit(request_upstream, upstream): upstream for upstream in upstreams}
     last_error: Exception | None = None
+    too_large_error: AudioTooLargeError | None = None
     try:
         for future in as_completed(futures):
             upstream = futures[future]
             try:
-                return future.result()
+                payload = future.result()
+                _mark_upstream_success(upstream)
+                return payload
+            except AudioTooLargeError as exc:
+                too_large_error = exc
             except Exception as exc:
                 last_error = exc
+                _mark_upstream_failure(upstream)
                 print(
                     "Seven Music upstream candidate failed:",
                     upstream,
@@ -108,7 +179,54 @@ def _resolve_upstream_sync(video_id: str) -> dict[str, Any]:
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
 
+    if too_large_error:
+        raise too_large_error
     raise RuntimeError("all upstream resolvers failed") from last_error
+
+
+def _search_upstream_sync(query: str, limit: int) -> list[dict[str, Any]]:
+    upstreams = _healthy_upstreams(_resolver_upstreams())
+    if not upstreams:
+        raise RuntimeError("upstream disabled")
+
+    query_string = urllib.parse.urlencode({"q": query, "limit": limit})
+
+    def request_upstream(upstream: str) -> list[dict[str, Any]]:
+        request = urllib.request.Request(
+            upstream + "/v1/youtube/search?" + query_string,
+            headers={"Accept": "application/json", "User-Agent": "Seven-Music/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            raise RuntimeError("upstream returned invalid search payload")
+        return items
+
+    executor = ThreadPoolExecutor(max_workers=len(upstreams))
+    futures = {executor.submit(request_upstream, upstream): upstream for upstream in upstreams}
+    last_error: Exception | None = None
+    try:
+        for future in as_completed(futures):
+            upstream = futures[future]
+            try:
+                items = future.result()
+                _mark_upstream_success(upstream)
+                return items
+            except Exception as exc:
+                last_error = exc
+                _mark_upstream_failure(upstream)
+                print(
+                    "Seven Music search upstream candidate failed:",
+                    upstream,
+                    type(exc).__name__,
+                    str(exc),
+                    file=sys.stderr,
+                )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    raise RuntimeError("all upstream search resolvers failed") from last_error
 
 
 def _extractor_args() -> dict[str, dict[str, list[str]]]:
@@ -167,7 +285,9 @@ def _base_ydl_options() -> dict[str, Any]:
         "js_runtimes": _available_js_runtimes(),
         "remote_components": ["ejs:github"],
         "socket_timeout": 15,
-        "retries": 2,
+        "retries": 3,
+        "extractor_retries": 3,
+        "fragment_retries": 3,
     }
 
     cookie_file = _cookies_file()
@@ -182,6 +302,15 @@ def _base_ydl_options() -> dict[str, Any]:
 
 
 def _search_sync(query: str, limit: int) -> list[dict[str, Any]]:
+    cache_key = str(limit) + ":" + query.casefold().strip()
+    now = time.time()
+    cached = _search_cache.get(cache_key)
+    if cached and cached.expires_at > now:
+        return list(cached.value)
+
+    # Ask for extra candidates because long mixes/albums are deliberately
+    # removed before results reach the app.
+    fetch_limit = min(20, max(limit, limit * 2))
     options = {
         **_base_ydl_options(),
         "extract_flat": True,
@@ -189,7 +318,7 @@ def _search_sync(query: str, limit: int) -> list[dict[str, Any]]:
     }
 
     with YoutubeDL(options) as ydl:
-        info = ydl.extract_info("ytsearch" + str(limit) + ":" + query, download=False)
+        info = ydl.extract_info("ytsearch" + str(fetch_limit) + ":" + query, download=False)
 
     entries = info.get("entries") or []
     results: list[dict[str, Any]] = []
@@ -203,6 +332,10 @@ def _search_sync(query: str, limit: int) -> list[dict[str, Any]]:
             continue
 
         duration = entry.get("duration") or 0
+        duration_seconds = int(duration) if duration else 0
+        if duration_seconds > MAX_SEARCH_DURATION_SECONDS:
+            continue
+
         artist = entry.get("artist") or entry.get("uploader") or entry.get("channel") or "YouTube"
         thumbnails = entry.get("thumbnails") or []
         thumbnail = entry.get("thumbnail")
@@ -214,12 +347,18 @@ def _search_sync(query: str, limit: int) -> list[dict[str, Any]]:
                 "videoId": video_id,
                 "title": str(entry.get("title") or "Sem título"),
                 "artist": str(artist),
-                "durationSeconds": int(duration) if duration else 0,
+                "durationSeconds": duration_seconds,
                 "thumbnail": thumbnail,
             }
         )
+        if len(results) >= limit:
+            break
 
-    return results
+    _search_cache[cache_key] = CacheEntry(
+        expires_at=now + SEARCH_CACHE_TTL_SECONDS,
+        value=results,
+    )
+    return list(results)
 
 
 def _safe_headers(info: dict[str, Any]) -> dict[str, str]:
@@ -231,25 +370,66 @@ def _safe_headers(info: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _extract_stream(info: dict[str, Any]) -> tuple[str | None, dict[str, str]]:
-    stream_url = info.get("url")
+def _estimated_audio_size_bytes(item: dict[str, Any], duration_seconds: float) -> int | None:
+    for key in ("filesize", "filesize_approx"):
+        raw = item.get(key)
+        if raw:
+            try:
+                value = int(raw)
+                if value > 0:
+                    return value
+            except (TypeError, ValueError):
+                pass
+
+    bitrate_kbps = item.get("tbr") or item.get("abr")
+    if bitrate_kbps and duration_seconds > 0:
+        try:
+            # Small safety margin for container/transport overhead.
+            return int(float(bitrate_kbps) * 1000 / 8 * duration_seconds * 1.05)
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def _candidate_within_limit(
+    item: dict[str, Any],
+    duration_seconds: float,
+) -> tuple[bool, int | None]:
+    size_bytes = _estimated_audio_size_bytes(item, duration_seconds)
+    if size_bytes is not None:
+        return size_bytes <= MAX_AUDIO_BYTES, size_bytes
+
+    # When YouTube omits filesize information, be conservative. This prevents
+    # long albums/mixes from slipping through just because the CDN did not
+    # expose Content-Length during extraction.
+    if duration_seconds > MAX_SEARCH_DURATION_SECONDS:
+        return False, None
+    return True, None
+
+
+def _extract_stream(
+    info: dict[str, Any],
+) -> tuple[str | None, dict[str, str], int | None]:
+    duration_seconds = float(info.get("duration") or 0)
     stream_headers = _safe_headers(info)
+    saw_oversized_audio = False
 
     # Never accept a muxed/video stream. Seven Music is audio-only.
+    stream_url = info.get("url")
     if stream_url and info.get("vcodec") == "none":
-        return str(stream_url), stream_headers
+        allowed, size_bytes = _candidate_within_limit(info, duration_seconds)
+        if allowed:
+            return str(stream_url), stream_headers, size_bytes
+        saw_oversized_audio = True
 
     requested = info.get("requested_formats") or []
-    audio = next(
-        (
-            item
-            for item in requested
-            if item and item.get("vcodec") == "none" and item.get("url")
-        ),
-        None,
-    )
-    if audio:
-        return str(audio.get("url")), _safe_headers(audio) or stream_headers
+    for audio in requested:
+        if not audio or audio.get("vcodec") != "none" or not audio.get("url"):
+            continue
+        allowed, size_bytes = _candidate_within_limit(audio, duration_seconds)
+        if allowed:
+            return str(audio.get("url")), _safe_headers(audio) or stream_headers, size_bytes
+        saw_oversized_audio = True
 
     entries = info.get("formats") or []
     candidates = [
@@ -268,11 +448,21 @@ def _extract_stream(info: dict[str, Any]) -> tuple[str | None, dict[str, str]]:
         ),
         reverse=True,
     )
-    if candidates:
-        best = candidates[0]
-        return str(best.get("url")), _safe_headers(best) or stream_headers
+    for candidate in candidates:
+        allowed, size_bytes = _candidate_within_limit(candidate, duration_seconds)
+        if allowed:
+            return (
+                str(candidate.get("url")),
+                _safe_headers(candidate) or stream_headers,
+                size_bytes,
+            )
+        saw_oversized_audio = True
 
-    return None, stream_headers
+    if saw_oversized_audio:
+        raise AudioTooLargeError(
+            "Esta faixa ultrapassa o limite de 12 MB do Seven Music."
+        )
+    return None, stream_headers, None
 
 
 def _resolve_sync(video_id: str) -> dict[str, Any]:
@@ -342,7 +532,7 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
             with YoutubeDL(options) as ydl:
                 info = ydl.extract_info(url, download=False)
 
-            stream_url, stream_headers = _extract_stream(info)
+            stream_url, stream_headers, size_bytes = _extract_stream(info)
             if not stream_url:
                 continue
 
@@ -352,12 +542,15 @@ def _resolve_sync(video_id: str) -> dict[str, Any]:
                 "streamHeaders": stream_headers,
                 "expiresAt": None,
                 "strategy": clients[0],
+                "sizeBytes": size_bytes,
             }
             _resolve_cache[video_id] = CacheEntry(
                 expires_at=now + CACHE_TTL_SECONDS,
                 value=value,
             )
             return value
+        except AudioTooLargeError:
+            raise
         except Exception as exc:
             last_error = exc
             print(
@@ -379,7 +572,7 @@ async def root() -> dict[str, str]:
     return {
         "name": "Seven Music API",
         "status": "online",
-        "version": "0.2.0",
+        "version": "0.2.6",
     }
 
 
@@ -394,7 +587,20 @@ async def youtube_search(
     limit: int = Query(default=12, ge=1, le=20),
 ) -> dict[str, list[dict[str, Any]]]:
     try:
-        items = await asyncio.to_thread(_search_sync, q.strip(), limit)
+        query = q.strip()
+        if _resolver_upstreams():
+            try:
+                items = await asyncio.to_thread(_search_upstream_sync, query, limit)
+                return {"items": items}
+            except Exception as upstream_exc:
+                print(
+                    "Seven Music search upstream resolver failed:",
+                    type(upstream_exc).__name__,
+                    str(upstream_exc),
+                    file=sys.stderr,
+                )
+
+        items = await asyncio.to_thread(_search_sync, query, limit)
         return {"items": items}
     except DownloadError as exc:
         raise HTTPException(
@@ -419,6 +625,8 @@ async def youtube_resolve(video_id: str) -> dict[str, Any]:
         if _resolver_upstreams():
             try:
                 return await asyncio.to_thread(_resolve_upstream_sync, video_id)
+            except AudioTooLargeError:
+                raise
             except Exception as upstream_exc:
                 print(
                     "Seven Music upstream resolver failed:",
@@ -435,6 +643,8 @@ async def youtube_resolve(video_id: str) -> dict[str, Any]:
         return await asyncio.to_thread(_resolve_sync, video_id)
     except HTTPException:
         raise
+    except AudioTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except DownloadError as exc:
         raise HTTPException(
             status_code=502,
