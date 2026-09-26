@@ -12,8 +12,6 @@ export type Track = {
   assetId?: string;
   filename?: string;
   soundcloudUrn?: string;
-  soundcloudTranscodingUrl?: string;
-  soundcloudTrackAuthorization?: string;
   permalinkUrl?: string;
   thumbnail?: string;
 };
